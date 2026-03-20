@@ -1520,17 +1520,6 @@ function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }
     setDiscordServers(updated);
   };
 
-  const saveGuildToken = async (guildId: string) => {
-    try {
-      const configResp = await fetch('/api/admin/dino-monitor');
-      const configData = await configResp.json();
-      await fetch('/api/admin/dino-monitor', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...configData.config, discord_servers: discordServers }),
-      });
-    } catch {}
-  };
 
   const toggleSpecies = (speciesId: string) => {
     setConfig(prev => {
@@ -1829,7 +1818,6 @@ function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }
                   type="password"
                   value={guild.nitrado_token || ''}
                   onChange={(e) => updateGuildToken(guild.guild_id, e.target.value)}
-                  onBlur={() => saveGuildToken(guild.guild_id)}
                   placeholder="Enter Nitrado token for this server"
                   style={{ flex: 1 }}
                 />
