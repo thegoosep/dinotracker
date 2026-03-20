@@ -205,7 +205,7 @@ export interface ServerThread {
  * Get thread IDs for a server name across all configured Discord guilds.
  */
 export async function getOrCreateServerThreads(serverName: string): Promise<ServerThread[]> {
-  const discordServers = getDiscordServers();
+  const discordServers = await getDiscordServers();
   const threads: ServerThread[] = [];
   for (const ds of discordServers) {
     const threadId = await findOrCreateThread(serverName, ds.guild_id, ds.forum_channel_id);
