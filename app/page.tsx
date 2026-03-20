@@ -1455,7 +1455,7 @@ function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }
       const response = await fetch('/api/admin/dino-monitor', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
+        body: JSON.stringify({ ...config, discord_servers: discordServers }),
       });
       if (response.ok) {
         setSaveMsg({ text: 'Config saved!', type: 'success' });
