@@ -1,0 +1,61 @@
+export const theme = {
+  colors: {
+    primary: '#6D28D9',
+    primaryDark: '#5B21B6',
+    primaryLight: '#7C3AED',
+    secondary: '#DB2777',
+    background: '#000000',
+    surface: '#050505',
+    surfaceLight: '#0f0f0f',
+    text: '#F3F4F6',
+    textSecondary: '#9CA3AF',
+    success: '#10B981',
+    error: '#EF4444',
+    warning: '#F59E0B',
+  },
+  fonts: {
+    body: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    heading: '"Inter", -apple-system, BlinkMacSystemFont, sans-serif',
+    mono: 'Monaco, "Courier New", monospace',
+  },
+  fontSizes: {
+    xs: '0.75rem',
+    sm: '0.875rem',
+    md: '1rem',
+    lg: '1.125rem',
+    xl: '1.25rem',
+    '2xl': '1.5rem',
+    '3xl': '1.875rem',
+    '4xl': '2.25rem',
+  },
+  spacing: {
+    xs: '0.25rem',
+    sm: '0.5rem',
+    md: '1rem',
+    lg: '1.5rem',
+    xl: '2rem',
+    '2xl': '3rem',
+    '3xl': '4rem',
+  },
+  borderRadius: {
+    sm: '0.25rem',
+    md: '0.5rem',
+    lg: '0.75rem',
+    xl: '1rem',
+    full: '9999px',
+  },
+  shadows: {
+    sm: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+    md: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+    lg: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+    xl: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+    glow: '0 0 20px rgba(139, 92, 246, 0.5)',
+  },
+  transitions: {
+    fast: '150ms ease',
+    normal: '250ms ease',
+    slow: '350ms ease',
+  },
+};
+
+export type Theme = typeof theme;

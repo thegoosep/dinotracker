@@ -1,0 +1,32 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+
+# environment
+.env
+.env.local
+.env*.local
+
+# data/config (contains tokens)
+data/
+
+# debug
+npm-debug.log*
+
+# misc
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
+nul
+
+# temp/debug json dumps
+monitor_check.json
+monitor_status.json
+rag_classes.json
+*tmp_nitrado*
+
+# claude code
+.claude/
