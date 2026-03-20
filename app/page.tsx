@@ -1246,24 +1246,6 @@ export default function DinoTrackerPage() {
     } catch {}
   };
 
-  const updateServerToken = async (guildId: string, token: string) => {
-    const updated = discordServers.map(s =>
-      s.guild_id === guildId ? { ...s, nitrado_token: token } : s
-    );
-    setDiscordServers(updated);
-  };
-
-  const saveServerToken = async (guildId: string) => {
-    try {
-      const configResp = await fetch('/api/admin/dino-monitor');
-      const configData = await configResp.json();
-      await fetch('/api/admin/dino-monitor', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...configData.config, discord_servers: discordServers }),
-      });
-    } catch {}
-  };
 
   if (status === 'loading') {
     return (
@@ -1348,52 +1330,31 @@ export default function DinoTrackerPage() {
                   </ChannelPickerPanel>
                 )}
                 {discordServers.map(s => (
-                  <div key={s.guild_id}>
-                    <ServerDropdownItem style={{
-                      background: editingGuildId === s.guild_id ? 'rgba(168,85,247,0.1)' : 'transparent',
-                      borderRadius: '6px',
-                    }}>
-                      <ColorPickerWrapper title="Embed color">
-                        <ColorSwatch $color={s.embed_color || '#a855f7'} />
-                        <input
-                          type="color"
-                          value={s.embed_color || '#a855f7'}
-                          onChange={e => updateServerColor(s.guild_id, e.target.value)}
-                        />
-                      </ColorPickerWrapper>
-                      <span style={{ flex: 1 }}>{s.guild_name || s.guild_id}</span>
-                      <span style={{ color: '#6b7280', fontSize: '0.7rem' }}>#{s.forum_channel_name || s.forum_channel_id}</span>
-                      <ServerRemoveBtn
-                        onClick={() => editingGuildId === s.guild_id ? setEditingGuildId(null) : startEditChannel(s.guild_id)}
-                        title="Change forum channel"
-                        style={editingGuildId === s.guild_id ? { color: '#a855f7', background: 'rgba(168,85,247,0.15)' } : {}}
-                      >
-                        <Edit2 size={12} />
-                      </ServerRemoveBtn>
-                      <ServerRemoveBtn onClick={() => removeDiscordServer(s.guild_id)} title="Remove server">
-                        <X size={14} />
-                      </ServerRemoveBtn>
-                    </ServerDropdownItem>
-                    <div style={{ padding: '2px 8px 6px', display: 'flex', gap: '4px', alignItems: 'center' }}>
+                  <ServerDropdownItem key={s.guild_id} style={{
+                    background: editingGuildId === s.guild_id ? 'rgba(168,85,247,0.1)' : 'transparent',
+                    borderRadius: '6px',
+                  }}>
+                    <ColorPickerWrapper title="Embed color">
+                      <ColorSwatch $color={s.embed_color || '#a855f7'} />
                       <input
-                        type="password"
-                        placeholder="Nitrado token"
-                        value={s.nitrado_token || ''}
-                        onChange={e => updateServerToken(s.guild_id, e.target.value)}
-                        onBlur={() => saveServerToken(s.guild_id)}
-                        style={{
-                          flex: 1,
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(100,100,100,0.3)',
-                          borderRadius: '4px',
-                          color: '#e5e7eb',
-                          padding: '3px 6px',
-                          fontSize: '0.7rem',
-                          outline: 'none',
-                        }}
+                        type="color"
+                        value={s.embed_color || '#a855f7'}
+                        onChange={e => updateServerColor(s.guild_id, e.target.value)}
                       />
-                    </div>
-                  </div>
+                    </ColorPickerWrapper>
+                    <span style={{ flex: 1 }}>{s.guild_name || s.guild_id}</span>
+                    <span style={{ color: '#6b7280', fontSize: '0.7rem' }}>#{s.forum_channel_name || s.forum_channel_id}</span>
+                    <ServerRemoveBtn
+                      onClick={() => editingGuildId === s.guild_id ? setEditingGuildId(null) : startEditChannel(s.guild_id)}
+                      title="Change forum channel"
+                      style={editingGuildId === s.guild_id ? { color: '#a855f7', background: 'rgba(168,85,247,0.15)' } : {}}
+                    >
+                      <Edit2 size={12} />
+                    </ServerRemoveBtn>
+                    <ServerRemoveBtn onClick={() => removeDiscordServer(s.guild_id)} title="Remove server">
+                      <X size={14} />
+                    </ServerRemoveBtn>
+                  </ServerDropdownItem>
                 ))}
                 <AddServerBtn onClick={() => { setShowWizard(true); setServerDropdownOpen(false); }}>
                   <Plus size={14} />
@@ -1413,19 +1374,21 @@ export default function DinoTrackerPage() {
         </Header>
 
         <Section>
-          <DinoMonitorPanel />
+          <DinoMonitorPanel discordServers={discordServers} setDiscordServers={setDiscordServers} />
         </Section>
       </Content>
     </Container>
   );
 }
 
-function DinoMonitorPanel() {
+function DinoMonitorPanel({ discordServers, setDiscordServers }: {
+  discordServers: DiscordServerConfig[];
+  setDiscordServers: (servers: DiscordServerConfig[]) => void;
+}) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [config, setConfig] = useState({
-    nitrado_token: '',
     discord_webhook_url: '',
     min_points: 35,
     max_level: 180,
@@ -1433,12 +1396,12 @@ function DinoMonitorPanel() {
     servers: [] as { service_id: string; name: string }[],
   });
 
-  // Server fetching
-  const [availableServers, setAvailableServers] = useState<Array<{
+  // Per-guild server fetching
+  const [guildAvailableServers, setGuildAvailableServers] = useState<Record<string, Array<{
     service_id: string; name: string; game: string; status: string;
-  }>>([]);
-  const [fetchingServers, setFetchingServers] = useState(false);
-  const [serverError, setServerError] = useState('');
+  }>>>({});
+  const [fetchingGuild, setFetchingGuild] = useState<string | null>(null);
+  const [guildServerError, setGuildServerError] = useState<Record<string, string>>({});
 
   // Results feed
   const [results, setResults] = useState<any[]>([]);
@@ -1466,7 +1429,6 @@ function DinoMonitorPanel() {
           }
         }
         setConfig({
-          nitrado_token: data.config.nitrado_token || '',
           discord_webhook_url: data.config.discord_webhook_url ?? '',
           min_points: data.config.min_points || 35,
           max_level: data.config.max_level || 180,
@@ -1504,32 +1466,33 @@ function DinoMonitorPanel() {
     }
   };
 
-  const fetchServers = async () => {
-    if (!config.nitrado_token) {
-      setServerError('Enter a Nitrado token first');
+  const fetchGuildServers = async (guildId: string) => {
+    const guild = discordServers.find(s => s.guild_id === guildId);
+    if (!guild?.nitrado_token) {
+      setGuildServerError(prev => ({ ...prev, [guildId]: 'Enter a Nitrado token first' }));
       return;
     }
     try {
-      setFetchingServers(true);
-      setServerError('');
+      setFetchingGuild(guildId);
+      setGuildServerError(prev => ({ ...prev, [guildId]: '' }));
       const response = await fetch('/api/admin/dino-monitor/servers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nitrado_token: config.nitrado_token }),
+        body: JSON.stringify({ nitrado_token: guild.nitrado_token }),
       });
       const data = await response.json();
       if (!response.ok) {
-        setServerError(data.error || 'Failed to fetch servers');
+        setGuildServerError(prev => ({ ...prev, [guildId]: data.error || 'Failed to fetch servers' }));
         return;
       }
-      setAvailableServers(data.servers || []);
+      setGuildAvailableServers(prev => ({ ...prev, [guildId]: data.servers || [] }));
       if (data.servers?.length === 0) {
-        setServerError('No game servers found for this token');
+        setGuildServerError(prev => ({ ...prev, [guildId]: 'No game servers found for this token' }));
       }
-    } catch (error) {
-      setServerError('Failed to fetch servers');
+    } catch {
+      setGuildServerError(prev => ({ ...prev, [guildId]: 'Failed to fetch servers' }));
     } finally {
-      setFetchingServers(false);
+      setFetchingGuild(null);
     }
   };
 
@@ -1543,6 +1506,25 @@ function DinoMonitorPanel() {
           : [...prev.servers, { service_id: server.service_id, name: server.name }],
       };
     });
+  };
+
+  const updateGuildToken = (guildId: string, token: string) => {
+    const updated = discordServers.map(s =>
+      s.guild_id === guildId ? { ...s, nitrado_token: token } : s
+    );
+    setDiscordServers(updated);
+  };
+
+  const saveGuildToken = async (guildId: string) => {
+    try {
+      const configResp = await fetch('/api/admin/dino-monitor');
+      const configData = await configResp.json();
+      await fetch('/api/admin/dino-monitor', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...configData.config, discord_servers: discordServers }),
+      });
+    } catch {}
   };
 
   const toggleSpecies = (speciesId: string) => {
@@ -1778,39 +1760,6 @@ function DinoMonitorPanel() {
       </SectionHeader>
 
       <MonitorGrid>
-        {/* API Keys */}
-        <MonitorCard>
-          <MonitorCardTitle>API Configuration</MonitorCardTitle>
-          <FormGroup style={{ marginBottom: '12px' }}>
-            <FormLabel>Nitrado API Token</FormLabel>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <FormInput
-                type="password"
-                value={config.nitrado_token}
-                onChange={(e) => setConfig({ ...config, nitrado_token: e.target.value })}
-                placeholder="Enter your Nitrado API token"
-                style={{ flex: 1 }}
-              />
-              <FetchButton onClick={fetchServers} disabled={fetchingServers}>
-                {fetchingServers ? 'Fetching...' : 'Fetch Servers'}
-              </FetchButton>
-            </div>
-          </FormGroup>
-          <FormGroup style={{ marginBottom: '12px' }}>
-            <FormLabel style={{ fontSize: '0.75rem', opacity: 0.6 }}>Discord Webhook URL (fallback)</FormLabel>
-            <FormInput
-              type="text"
-              value={config.discord_webhook_url}
-              onChange={(e) => setConfig({ ...config, discord_webhook_url: e.target.value })}
-              placeholder="https://discord.com/api/webhooks/..."
-              style={{ fontSize: '0.85rem', opacity: 0.7 }}
-            />
-          </FormGroup>
-          <FetchButton onClick={testNotification} disabled={testingNotify} style={{ marginTop: '4px' }}>
-            {testingNotify ? 'Sending...' : 'Test Notification'}
-          </FetchButton>
-        </MonitorCard>
-
         {/* Scan Settings */}
         <MonitorCard>
           <MonitorCardTitle>Scan Settings</MonitorCardTitle>
@@ -1834,50 +1783,81 @@ function DinoMonitorPanel() {
               />
             </FormGroup>
           </FormGrid>
+          <FormGroup style={{ marginTop: '12px' }}>
+            <FormLabel style={{ fontSize: '0.75rem', opacity: 0.6 }}>Discord Webhook URL (fallback)</FormLabel>
+            <FormInput
+              type="text"
+              value={config.discord_webhook_url}
+              onChange={(e) => setConfig({ ...config, discord_webhook_url: e.target.value })}
+              placeholder="https://discord.com/api/webhooks/..."
+              style={{ fontSize: '0.85rem', opacity: 0.7 }}
+            />
+          </FormGroup>
+          <FetchButton onClick={testNotification} disabled={testingNotify} style={{ marginTop: '8px' }}>
+            {testingNotify ? 'Sending...' : 'Test Notification'}
+          </FetchButton>
         </MonitorCard>
       </MonitorGrid>
 
-      {/* Servers */}
-      <MonitorCard style={{ marginTop: '20px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <MonitorCardTitle style={{ margin: 0 }}>
-            Servers to Monitor ({config.servers.length} selected)
-          </MonitorCardTitle>
-        </div>
-        {serverError && (
-          <div style={{ color: '#ef4444', fontSize: '0.875rem', marginBottom: '8px' }}>{serverError}</div>
-        )}
-        {availableServers.length > 0 ? (
-          <ServersGrid>
-            {availableServers.map(server => {
-              const isSelected = config.servers.some(s => s.service_id === server.service_id);
-              return (
-                <ServerCheckboxLabel key={server.service_id} $checked={isSelected}>
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={() => toggleServer(server)}
-                  />
-                  <ServerName $checked={isSelected}>{server.name}</ServerName>
-                  <ServerStatus $status={server.status}>{server.status}</ServerStatus>
-                </ServerCheckboxLabel>
-              );
-            })}
-          </ServersGrid>
-        ) : config.servers.length > 0 ? (
-          <div>
-            {config.servers.map(s => (
-              <div key={s.service_id} style={{ color: '#9ca3af', padding: '4px 0', fontSize: '0.875rem' }}>
-                {s.name} ({s.service_id})
+      {/* Per-Guild Nitrado Config */}
+      {discordServers.map(guild => {
+        const guildServers = guildAvailableServers[guild.guild_id] || [];
+        const error = guildServerError[guild.guild_id] || '';
+        const isFetching = fetchingGuild === guild.guild_id;
+        return (
+          <MonitorCard key={guild.guild_id} style={{ marginTop: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <MonitorCardTitle style={{ margin: 0 }}>
+                {guild.guild_name || guild.guild_id}
+              </MonitorCardTitle>
+              <span style={{ color: '#6b7280', fontSize: '0.75rem' }}>
+                #{guild.forum_channel_name || guild.forum_channel_id}
+              </span>
+            </div>
+            <FormGroup style={{ marginBottom: '12px' }}>
+              <FormLabel>Nitrado API Token</FormLabel>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <FormInput
+                  type="password"
+                  value={guild.nitrado_token || ''}
+                  onChange={(e) => updateGuildToken(guild.guild_id, e.target.value)}
+                  onBlur={() => saveGuildToken(guild.guild_id)}
+                  placeholder="Enter Nitrado token for this server"
+                  style={{ flex: 1 }}
+                />
+                <FetchButton onClick={() => fetchGuildServers(guild.guild_id)} disabled={isFetching}>
+                  {isFetching ? 'Fetching...' : 'Fetch Servers'}
+                </FetchButton>
               </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyState style={{ padding: '20px 0' }}>
-            Click &quot;Fetch Servers&quot; above to load your Nitrado servers.
-          </EmptyState>
-        )}
-      </MonitorCard>
+            </FormGroup>
+            {error && (
+              <div style={{ color: '#ef4444', fontSize: '0.875rem', marginBottom: '8px' }}>{error}</div>
+            )}
+            {guildServers.length > 0 ? (
+              <ServersGrid>
+                {guildServers.map(server => {
+                  const isSelected = config.servers.some(s => s.service_id === server.service_id);
+                  return (
+                    <ServerCheckboxLabel key={server.service_id} $checked={isSelected}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleServer(server)}
+                      />
+                      <ServerName $checked={isSelected}>{server.name}</ServerName>
+                      <ServerStatus $status={server.status}>{server.status}</ServerStatus>
+                    </ServerCheckboxLabel>
+                  );
+                })}
+              </ServersGrid>
+            ) : config.servers.length > 0 && !guild.nitrado_token ? (
+              <div style={{ color: '#9ca3af', fontSize: '0.8rem', padding: '8px 0' }}>
+                Enter a Nitrado token and click Fetch Servers to configure.
+              </div>
+            ) : null}
+          </MonitorCard>
+        );
+      })}
 
 
       {/* Species Thresholds */}
