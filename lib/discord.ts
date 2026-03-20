@@ -204,10 +204,11 @@ export interface ServerThread {
 /**
  * Get thread IDs for a server name across all configured Discord guilds.
  */
-export async function getOrCreateServerThreads(serverName: string): Promise<ServerThread[]> {
+export async function getOrCreateServerThreads(serverName: string, guildId?: string): Promise<ServerThread[]> {
   const discordServers = await getDiscordServers();
+  const filtered = guildId ? discordServers.filter(ds => ds.guild_id === guildId) : discordServers;
   const threads: ServerThread[] = [];
-  for (const ds of discordServers) {
+  for (const ds of filtered) {
     const threadId = await findOrCreateThread(serverName, ds.guild_id, ds.forum_channel_id);
     if (threadId) {
       const color = ds.embed_color ? parseInt(ds.embed_color.replace('#', ''), 16) : undefined;
@@ -315,8 +316,9 @@ export async function sendEmbedToThread(threadId: string, embeds: DiscordEmbed[]
 export async function sendDinoAlert(
   serverName: string,
   embed: DiscordEmbed,
+  guildId?: string,
 ): Promise<boolean> {
-  const threads = await getOrCreateServerThreads(serverName);
+  const threads = await getOrCreateServerThreads(serverName, guildId);
   if (threads.length === 0) {
     console.error(`[Discord] Could not get any threads for "${serverName}"`);
     return false;

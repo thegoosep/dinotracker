@@ -3,7 +3,7 @@ import { buildDinoAlertEmbed, sendDinoAlert } from '@/lib/discord';
 
 export async function POST(request: Request) {
   try {
-    const { results } = await request.json();
+    const { results, guild_id } = await request.json();
 
     if (!results || !Array.isArray(results) || results.length === 0) {
       return NextResponse.json({ error: 'No results provided' }, { status: 400 });
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
         baseUrl,
       });
 
-      const success = await sendDinoAlert(result.server_name || 'Test Server', embed);
+      const success = await sendDinoAlert(result.server_name || 'Test Server', embed, guild_id);
       if (success) sent++;
 
       // Small delay to avoid rate limits
