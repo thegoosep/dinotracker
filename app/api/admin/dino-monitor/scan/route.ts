@@ -13,40 +13,57 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const targetServiceId = body.service_id; // optional: scan a specific server
 
-    // Load thresholds from config (Firestore or local file)
-    let speciesThresholds: Record<string, { hp: number | null; melee: number | null }> = {};
-    let minPoints = 35;
-    let maxLevel = 180;
-
+    // Load config from DB or local
+    let configData: Record<string, any> | null = null;
     if (adminDb) {
       const configDoc = await adminDb.collection('dino_monitor').doc('config').get();
-      const config = configDoc.data();
-      if (config) {
-        speciesThresholds = config.species_thresholds || {};
-        minPoints = config.min_points || 35;
-        maxLevel = config.max_level || 180;
-      }
+      configData = configDoc.data() || null;
     } else {
-      const localConfig = loadLocalConfig();
-      if (localConfig) {
-        speciesThresholds = localConfig.species_thresholds || {};
-        minPoints = localConfig.min_points || 35;
-        maxLevel = localConfig.max_level || 180;
-      }
+      configData = loadLocalConfig();
     }
+
+    const speciesThresholds = configData?.species_thresholds || {};
+    const minPoints = configData?.min_points || 35;
+    const maxLevel = configData?.max_level || 180;
+    const configuredServers: any[] = configData?.servers || [];
+    const discordServers: any[] = configData?.discord_servers || [];
+    const globalToken = configData?.nitrado_token || '';
 
     log(`[Scan] Config loaded: ${Object.keys(speciesThresholds).length} species thresholds, minPoints=${minPoints}, maxLevel=${maxLevel}`);
 
-    // Get server list, filter to only configured servers, overlay configured names
-    const servers = await getServerList();
-    const localConfig = loadLocalConfig();
-    const configNameMap = new Map((localConfig?.servers || []).map((s: any) => [String(s.service_id), s.name]));
-    const namedServers = servers
-      .filter(s => configNameMap.has(s.service_id))
-      .map(s => ({ ...s, name: configNameMap.get(s.service_id) || s.name }));
+    // Build a set of configured service_ids with their names
+    const configNameMap = new Map(configuredServers.map((s: any) => [String(s.service_id), s.name]));
+
+    // Collect unique Nitrado tokens from discord servers (fall back to global)
+    const tokens = new Set<string>();
+    for (const ds of discordServers) {
+      tokens.add(ds.nitrado_token || globalToken);
+    }
+    // If no discord servers configured, use global token
+    if (tokens.size === 0 && globalToken) tokens.add(globalToken);
+
+    // Fetch game servers from each unique token
+    const allGameServers: Array<{ server: any; token: string }> = [];
+    for (const token of tokens) {
+      if (!token) continue;
+      try {
+        const servers = await getServerList(token);
+        for (const s of servers) {
+          if (configNameMap.has(s.service_id)) {
+            allGameServers.push({
+              server: { ...s, name: configNameMap.get(s.service_id) || s.name },
+              token,
+            });
+          }
+        }
+      } catch (error) {
+        log(`[Scan] Failed to fetch servers for token: ${error}`);
+      }
+    }
+
     const toScan = targetServiceId
-      ? namedServers.filter(s => s.service_id === targetServiceId)
-      : namedServers;
+      ? allGameServers.filter(gs => gs.server.service_id === targetServiceId)
+      : allGameServers;
 
     if (toScan.length === 0) {
       return NextResponse.json({ error: 'No servers found to scan' }, { status: 404 });
@@ -55,19 +72,19 @@ export async function POST(request: Request) {
     const baseUrl = process.env.NEXTAUTH_URL || `https://${process.env.VERCEL_URL}` || 'http://localhost:3001';
     const allResults: any[] = [];
 
-    for (const server of toScan) {
+    for (const { server, token } of toScan) {
       log(`[Scan] === Scanning ${server.name} (${getMapDisplayName(server.map)}) ===`);
 
       try {
         // Get save file timestamp
-        const saveInfo = await getSaveFileInfo(server.service_id, server);
+        const saveInfo = await getSaveFileInfo(server.service_id, server, token);
         const saveTimestamp = saveInfo?.modified_at
           ? new Date(saveInfo.modified_at * 1000).toISOString()
           : undefined;
 
         // Download save file
         log(`[Scan] Downloading save from ${server.name}...`);
-        const saveData = await downloadSave(server.service_id, server, saveInfo);
+        const saveData = await downloadSave(server.service_id, server, saveInfo, token);
         log(`[Scan] Parsing save file (${(saveData.length / 1024 / 1024).toFixed(1)} MB)...`);
 
         // Parse for wild dinos

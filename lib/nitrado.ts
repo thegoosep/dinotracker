@@ -1,10 +1,13 @@
 import { CONFIG } from './config';
 import * as zlib from 'zlib';
 
-const AUTH_HEADERS = {
-  Authorization: `Bearer ${CONFIG.NITRADO_TOKEN}`,
-  'Content-Type': 'application/json',
-};
+function getAuthHeaders(token?: string) {
+  const t = token || CONFIG.NITRADO_TOKEN;
+  return {
+    Authorization: `Bearer ${t}`,
+    'Content-Type': 'application/json',
+  };
+}
 
 interface NitradoServer {
   service_id: string;
@@ -16,9 +19,10 @@ interface NitradoServer {
   username: string;
 }
 
-export async function getServerList(): Promise<NitradoServer[]> {
+export async function getServerList(token?: string): Promise<NitradoServer[]> {
+  const headers = getAuthHeaders(token);
   const resp = await fetch('https://api.nitrado.net/services', {
-    headers: AUTH_HEADERS,
+    headers,
   });
   const data = await resp.json();
   const services = data?.data?.services || [];
@@ -30,7 +34,7 @@ export async function getServerList(): Promise<NitradoServer[]> {
     try {
       const detailResp = await fetch(
         `https://api.nitrado.net/services/${svc.id}/gameservers`,
-        { headers: AUTH_HEADERS }
+        { headers }
       );
       const detailData = await detailResp.json();
       if (detailData?.status !== 'success') continue;
@@ -71,11 +75,12 @@ export interface SaveFileInfo {
  * Checks both plain {Map}.ark and timestamped {Map}_*.ark.gz backups,
  * returning whichever was modified most recently.
  */
-export async function getSaveFileInfo(serviceId: string, server: NitradoServer): Promise<SaveFileInfo | null> {
+export async function getSaveFileInfo(serviceId: string, server: NitradoServer, token?: string): Promise<SaveFileInfo | null> {
   try {
+    const headers = getAuthHeaders(token);
     const resp = await fetch(
       `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/list?dir=${encodeURIComponent(server.saves_dir)}`,
-      { headers: AUTH_HEADERS }
+      { headers }
     );
     const data = await resp.json();
     if (data?.status !== 'success') return null;
@@ -109,9 +114,10 @@ export async function getSaveFileInfo(serviceId: string, server: NitradoServer):
   }
 }
 
-export async function downloadSave(serviceId: string, server: NitradoServer, saveInfo?: SaveFileInfo | null): Promise<Buffer> {
+export async function downloadSave(serviceId: string, server: NitradoServer, saveInfo?: SaveFileInfo | null, token?: string): Promise<Buffer> {
+  const headers = getAuthHeaders(token);
   // Find the newest save file (use provided info to avoid double API call)
-  if (!saveInfo) saveInfo = await getSaveFileInfo(serviceId, server);
+  if (!saveInfo) saveInfo = await getSaveFileInfo(serviceId, server, token);
   const fileName = saveInfo?.name || `${server.map}.ark`;
   const arkPath = `${server.saves_dir}${fileName}`;
   const tempName = `${server.map}.ark`; // always use plain name for temp copy
@@ -124,7 +130,7 @@ export async function downloadSave(serviceId: string, server: NitradoServer, sav
     `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/copy`,
     {
       method: 'POST',
-      headers: AUTH_HEADERS,
+      headers,
       body: JSON.stringify({
         source_path: arkPath,
         target_path: server.ftproot,
@@ -141,7 +147,7 @@ export async function downloadSave(serviceId: string, server: NitradoServer, sav
   console.log(`[Download] Getting download URL...`);
   const dlResp = await fetch(
     `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/download?file=${encodeURIComponent(tempPath)}`,
-    { headers: AUTH_HEADERS }
+    { headers }
   );
   const dlData = await dlResp.json();
   if (dlData?.status !== 'success') {
@@ -171,7 +177,7 @@ export async function downloadSave(serviceId: string, server: NitradoServer, sav
     `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/delete`,
     {
       method: 'DELETE',
-      headers: AUTH_HEADERS,
+      headers,
       body: JSON.stringify({ path: tempPath }),
     }
   ).catch(() => {});

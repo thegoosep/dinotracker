@@ -59,10 +59,11 @@ async function scanServer(
   maxLevel: number,
   baseUrl: string,
   saveModifiedAt?: number,
-  saveInfo?: any
+  saveInfo?: any,
+  token?: string
 ): Promise<{ alerts: number; found: number }> {
   log(`Downloading save: ${server.name} (${getMapDisplayName(server.map)})...`);
-  const saveData = await downloadSave(server.service_id, server, saveInfo);
+  const saveData = await downloadSave(server.service_id, server, saveInfo, token);
   log(`Parsing save file (${(saveData.length / 1024 / 1024).toFixed(1)} MB)...`);
   const wildDinos = parseArkSave(saveData);
   log(`${server.name} (${getMapDisplayName(server.map)}): ${wildDinos.length} wild dinos found`);
@@ -145,21 +146,39 @@ async function checkAndScan() {
     const minPoints = localConfig.min_points || 35;
     const maxLevel = localConfig.max_level || 180;
     const configServers = localConfig.servers || [];
+    const discordServers = localConfig.discord_servers || [];
+    const globalToken = localConfig.nitrado_token || '';
 
     if (configServers.length === 0) { log('No servers configured'); return; }
 
-    let servers;
-    try {
-      servers = await getServerList();
-    } catch (error) {
-      log(`Failed to get server list: ${error}`);
-      return;
+    // Collect unique Nitrado tokens from discord servers (fall back to global)
+    const tokens = new Set<string>();
+    for (const ds of discordServers) {
+      tokens.add(ds.nitrado_token || globalToken);
     }
+    if (tokens.size === 0 && globalToken) tokens.add(globalToken);
 
+    // Build a set of configured service_ids with their names
     const configNameMap = new Map(configServers.map((s: any) => [String(s.service_id), s.name]));
-    const toCheck = servers
-      .filter(s => configNameMap.has(s.service_id))
-      .map(s => ({ ...s, name: configNameMap.get(s.service_id) || s.name }));
+
+    // Fetch game servers from each unique token
+    const toCheck: Array<{ server: any; token: string }> = [];
+    for (const token of tokens) {
+      if (!token) continue;
+      try {
+        const servers = await getServerList(token);
+        for (const s of servers) {
+          if (configNameMap.has(s.service_id)) {
+            toCheck.push({
+              server: { ...s, name: configNameMap.get(s.service_id) || s.name },
+              token,
+            });
+          }
+        }
+      } catch (error) {
+        log(`Failed to get server list for token: ${error}`);
+      }
+    }
 
     if (toCheck.length === 0) { log('No matching servers on Nitrado'); return; }
 
@@ -172,13 +191,13 @@ async function checkAndScan() {
       log(`Full scan starting (${toCheck.length} servers)...`);
       let totalAlerts = 0;
 
-      for (const server of toCheck) {
+      for (const { server, token } of toCheck) {
         try {
           // Update saved timestamps while we're at it
-          const info = await getSaveFileInfo(server.service_id, server);
+          const info = await getSaveFileInfo(server.service_id, server, token);
           if (info) state.lastSaves[server.service_id] = info.modified_at;
 
-          const { alerts, found } = await scanServer(server, speciesThresholds, minPoints, maxLevel, baseUrl, info?.modified_at, info);
+          const { alerts, found } = await scanServer(server, speciesThresholds, minPoints, maxLevel, baseUrl, info?.modified_at, info, token);
           totalAlerts += alerts;
           state.alertCount += alerts;
           state.scanCount++;
@@ -195,9 +214,9 @@ async function checkAndScan() {
       // Quick check — only scan servers with new saves
       let newSavesFound = 0;
 
-      for (const server of toCheck) {
+      for (const { server, token } of toCheck) {
         try {
-          const info = await getSaveFileInfo(server.service_id, server);
+          const info = await getSaveFileInfo(server.service_id, server, token);
           if (!info) continue;
 
           const lastModified = state.lastSaves[server.service_id] || 0;
@@ -207,7 +226,7 @@ async function checkAndScan() {
           log(`New save: ${server.name} (${getMapDisplayName(server.map)}) — modified_at changed`);
           state.lastSaves[server.service_id] = info.modified_at;
 
-          const { alerts, found } = await scanServer(server, speciesThresholds, minPoints, maxLevel, baseUrl, info.modified_at, info);
+          const { alerts, found } = await scanServer(server, speciesThresholds, minPoints, maxLevel, baseUrl, info.modified_at, info, token);
           state.alertCount += alerts;
           state.scanCount++;
           log(`${server.name} (${getMapDisplayName(server.map)}): ${alerts} alerts sent (${found} found)`);

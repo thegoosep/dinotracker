@@ -1,8 +1,41 @@
 import { CONFIG } from './config';
 import { loadLocalConfig } from './localConfig';
+import { adminDb } from './firebaseAdmin';
 import { getSpeciesById } from './species';
 import * as fs from 'fs';
 import * as path from 'path';
+
+// Cache Firestore config in memory to avoid async reads in sync functions
+let firestoreConfigCache: Record<string, any> | null = null;
+let firestoreCacheTime = 0;
+const CACHE_TTL = 30_000; // 30 seconds
+
+async function loadFirestoreConfig(): Promise<Record<string, any> | null> {
+  if (!adminDb) return null;
+  const now = Date.now();
+  if (firestoreConfigCache && (now - firestoreCacheTime) < CACHE_TTL) {
+    return firestoreConfigCache;
+  }
+  try {
+    const doc = await adminDb.collection('dino_monitor').doc('config').get();
+    if (doc.exists) {
+      firestoreConfigCache = doc.data()!;
+      firestoreCacheTime = now;
+      return firestoreConfigCache;
+    }
+  } catch (e) {
+    console.error('[Discord] Failed to load Firestore config:', e);
+  }
+  return null;
+}
+
+function getConfigSync(): Record<string, any> | null {
+  // Use cached Firestore config if available, otherwise local
+  if (firestoreConfigCache && (Date.now() - firestoreCacheTime) < CACHE_TTL) {
+    return firestoreConfigCache;
+  }
+  return loadLocalConfig();
+}
 
 interface DiscordEmbed {
   title: string;
@@ -47,9 +80,17 @@ interface DiscordServer {
   forum_channel_id: string;
   forum_channel_name: string;
   embed_color?: string;
+  nitrado_token?: string;
 }
 
-function getDiscordServers(): DiscordServer[] {
+async function getDiscordServers(): Promise<DiscordServer[]> {
+  // Try Firestore first
+  const fbConfig = await loadFirestoreConfig();
+  if (fbConfig) {
+    const servers = fbConfig.discord_servers;
+    if (Array.isArray(servers) && servers.length > 0) return servers;
+  }
+  // Fallback to local config
   const localConfig = loadLocalConfig();
   const servers = localConfig?.discord_servers;
   if (Array.isArray(servers) && servers.length > 0) return servers;

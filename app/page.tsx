@@ -702,6 +702,7 @@ const WizardError = styled.p`
 const ServerDropdown = styled.div`
   position: relative;
   margin-left: auto;
+  z-index: 9999;
 `;
 
 const ServerDropdownToggle = styled.button`
@@ -725,14 +726,14 @@ const ServerDropdownToggle = styled.button`
 
 const ServerDropdownMenu = styled.div`
   position: absolute;
-  top: calc(100% + 4px);
+  bottom: calc(100% + 4px);
   right: 0;
   background: rgba(15, 15, 15, 0.98);
   border: 1px solid rgba(168, 85, 247, 0.4);
   border-radius: 8px;
   padding: 6px;
   min-width: 300px;
-  z-index: 100;
+  z-index: 9999;
   box-shadow: 0 8px 24px rgba(0,0,0,0.5);
 `;
 
@@ -891,6 +892,7 @@ interface DiscordServerConfig {
   forum_channel_id: string;
   forum_channel_name: string;
   embed_color?: string;
+  nitrado_token?: string;
 }
 
 function SetupWizard({ onComplete }: { onComplete: () => void }) {
@@ -1244,6 +1246,25 @@ export default function DinoTrackerPage() {
     } catch {}
   };
 
+  const updateServerToken = async (guildId: string, token: string) => {
+    const updated = discordServers.map(s =>
+      s.guild_id === guildId ? { ...s, nitrado_token: token } : s
+    );
+    setDiscordServers(updated);
+  };
+
+  const saveServerToken = async (guildId: string) => {
+    try {
+      const configResp = await fetch('/api/admin/dino-monitor');
+      const configData = await configResp.json();
+      await fetch('/api/admin/dino-monitor', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...configData.config, discord_servers: discordServers }),
+      });
+    } catch {}
+  };
+
   if (status === 'loading') {
     return (
       <LoginContainer>
@@ -1327,31 +1348,52 @@ export default function DinoTrackerPage() {
                   </ChannelPickerPanel>
                 )}
                 {discordServers.map(s => (
-                  <ServerDropdownItem key={s.guild_id} style={{
-                    background: editingGuildId === s.guild_id ? 'rgba(168,85,247,0.1)' : 'transparent',
-                    borderRadius: '6px',
-                  }}>
-                    <ColorPickerWrapper title="Embed color">
-                      <ColorSwatch $color={s.embed_color || '#a855f7'} />
+                  <div key={s.guild_id}>
+                    <ServerDropdownItem style={{
+                      background: editingGuildId === s.guild_id ? 'rgba(168,85,247,0.1)' : 'transparent',
+                      borderRadius: '6px',
+                    }}>
+                      <ColorPickerWrapper title="Embed color">
+                        <ColorSwatch $color={s.embed_color || '#a855f7'} />
+                        <input
+                          type="color"
+                          value={s.embed_color || '#a855f7'}
+                          onChange={e => updateServerColor(s.guild_id, e.target.value)}
+                        />
+                      </ColorPickerWrapper>
+                      <span style={{ flex: 1 }}>{s.guild_name || s.guild_id}</span>
+                      <span style={{ color: '#6b7280', fontSize: '0.7rem' }}>#{s.forum_channel_name || s.forum_channel_id}</span>
+                      <ServerRemoveBtn
+                        onClick={() => editingGuildId === s.guild_id ? setEditingGuildId(null) : startEditChannel(s.guild_id)}
+                        title="Change forum channel"
+                        style={editingGuildId === s.guild_id ? { color: '#a855f7', background: 'rgba(168,85,247,0.15)' } : {}}
+                      >
+                        <Edit2 size={12} />
+                      </ServerRemoveBtn>
+                      <ServerRemoveBtn onClick={() => removeDiscordServer(s.guild_id)} title="Remove server">
+                        <X size={14} />
+                      </ServerRemoveBtn>
+                    </ServerDropdownItem>
+                    <div style={{ padding: '2px 8px 6px', display: 'flex', gap: '4px', alignItems: 'center' }}>
                       <input
-                        type="color"
-                        value={s.embed_color || '#a855f7'}
-                        onChange={e => updateServerColor(s.guild_id, e.target.value)}
+                        type="password"
+                        placeholder="Nitrado token"
+                        value={s.nitrado_token || ''}
+                        onChange={e => updateServerToken(s.guild_id, e.target.value)}
+                        onBlur={() => saveServerToken(s.guild_id)}
+                        style={{
+                          flex: 1,
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(100,100,100,0.3)',
+                          borderRadius: '4px',
+                          color: '#e5e7eb',
+                          padding: '3px 6px',
+                          fontSize: '0.7rem',
+                          outline: 'none',
+                        }}
                       />
-                    </ColorPickerWrapper>
-                    <span style={{ flex: 1 }}>{s.guild_name || s.guild_id}</span>
-                    <span style={{ color: '#6b7280', fontSize: '0.7rem' }}>#{s.forum_channel_name || s.forum_channel_id}</span>
-                    <ServerRemoveBtn
-                      onClick={() => editingGuildId === s.guild_id ? setEditingGuildId(null) : startEditChannel(s.guild_id)}
-                      title="Change forum channel"
-                      style={editingGuildId === s.guild_id ? { color: '#a855f7', background: 'rgba(168,85,247,0.15)' } : {}}
-                    >
-                      <Edit2 size={12} />
-                    </ServerRemoveBtn>
-                    <ServerRemoveBtn onClick={() => removeDiscordServer(s.guild_id)} title="Remove server">
-                      <X size={14} />
-                    </ServerRemoveBtn>
-                  </ServerDropdownItem>
+                    </div>
+                  </div>
                 ))}
                 <AddServerBtn onClick={() => { setShowWizard(true); setServerDropdownOpen(false); }}>
                   <Plus size={14} />
@@ -1557,6 +1599,30 @@ function DinoMonitorPanel() {
 
   const clearAllSpecies = () => {
     setConfig(prev => ({ ...prev, species_thresholds: {} }));
+  };
+
+  const loadDefaultThresholds = () => {
+    const defaults: Record<string, { hp: number | null; melee: number | null }> = {
+      Desmodus: { hp: 30, melee: 30 },
+      BionicTrike: { hp: 33, melee: null },
+      Mantis: { hp: 33, melee: 33 },
+      Rhino: { hp: 33, melee: 33 },
+      Therizino: { hp: 33, melee: 33 },
+      Spino: { hp: 33, melee: 33 },
+      Turtle: { hp: 33, melee: null },
+      Ptero: { hp: 33, melee: null },
+      Owl: { hp: 33, melee: null },
+      Spindles: { hp: 29, melee: 29 },
+      BionicStego: { hp: 33, melee: null },
+      BionicQuetz: { hp: 33, melee: null },
+      BionicRex: { hp: 32, melee: null },
+      BogSpider: { hp: 32, melee: 32 },
+      MilkGlider: { hp: 32, melee: null },
+      Gigant: { hp: 32, melee: 32 },
+      Tusoteuthis: { hp: 30, melee: 30 },
+      Paracer: { hp: 30, melee: null },
+    };
+    setConfig(prev => ({ ...prev, species_thresholds: defaults, min_points: 33 }));
   };
 
   const [testingNotify, setTestingNotify] = useState(false);
@@ -1821,6 +1887,7 @@ function DinoMonitorPanel() {
             Species Thresholds ({enabledCount} selected)
           </MonitorCardTitle>
           <FilterButtons>
+            <FilterButton $active={false} onClick={loadDefaultThresholds}>Load Defaults</FilterButton>
             <FilterButton $active={false} onClick={selectAllSpecies}>Select All</FilterButton>
             <FilterButton $active={false} onClick={clearAllSpecies}>Clear All</FilterButton>
           </FilterButtons>
