@@ -1143,6 +1143,7 @@ export default function DinoTrackerPage() {
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null);
   const [showWizard, setShowWizard] = useState(false);
   const [discordServers, setDiscordServers] = useState<DiscordServerConfig[]>([]);
+  const [selectedGuildId, setSelectedGuildId] = useState<string | null>(null);
   const [serverDropdownOpen, setServerDropdownOpen] = useState(false);
   const [editingGuildId, setEditingGuildId] = useState<string | null>(null);
   const [editChannels, setEditChannels] = useState<ForumChannel[]>([]);
@@ -1158,6 +1159,7 @@ export default function DinoTrackerPage() {
         setDiscordServers(servers);
         if (servers.length > 0) {
           setSetupComplete(true);
+          setSelectedGuildId(prev => prev || servers[0].guild_id);
         } else {
           setSetupComplete(false);
         }
@@ -1298,7 +1300,7 @@ export default function DinoTrackerPage() {
           <ServerDropdown ref={dropdownRef}>
             <ServerDropdownToggle onClick={() => setServerDropdownOpen(!serverDropdownOpen)}>
               <Settings size={14} />
-              Discord Servers ({discordServers.length})
+              {discordServers.find(s => s.guild_id === selectedGuildId)?.guild_name || `Discord Servers (${discordServers.length})`}
               <ChevronDown size={12} />
             </ServerDropdownToggle>
             {serverDropdownOpen && (
@@ -1331,10 +1333,12 @@ export default function DinoTrackerPage() {
                 )}
                 {discordServers.map(s => (
                   <ServerDropdownItem key={s.guild_id} style={{
-                    background: editingGuildId === s.guild_id ? 'rgba(168,85,247,0.1)' : 'transparent',
+                    background: selectedGuildId === s.guild_id ? 'rgba(168,85,247,0.15)' : editingGuildId === s.guild_id ? 'rgba(168,85,247,0.1)' : 'transparent',
                     borderRadius: '6px',
-                  }}>
-                    <ColorPickerWrapper title="Embed color">
+                    cursor: 'pointer',
+                    borderLeft: selectedGuildId === s.guild_id ? '2px solid #a855f7' : '2px solid transparent',
+                  }} onClick={() => { setSelectedGuildId(s.guild_id); setServerDropdownOpen(false); }}>
+                    <ColorPickerWrapper title="Embed color" onClick={e => e.stopPropagation()}>
                       <ColorSwatch $color={s.embed_color || '#a855f7'} />
                       <input
                         type="color"
@@ -1345,13 +1349,13 @@ export default function DinoTrackerPage() {
                     <span style={{ flex: 1 }}>{s.guild_name || s.guild_id}</span>
                     <span style={{ color: '#6b7280', fontSize: '0.7rem' }}>#{s.forum_channel_name || s.forum_channel_id}</span>
                     <ServerRemoveBtn
-                      onClick={() => editingGuildId === s.guild_id ? setEditingGuildId(null) : startEditChannel(s.guild_id)}
+                      onClick={e => { e.stopPropagation(); editingGuildId === s.guild_id ? setEditingGuildId(null) : startEditChannel(s.guild_id); }}
                       title="Change forum channel"
                       style={editingGuildId === s.guild_id ? { color: '#a855f7', background: 'rgba(168,85,247,0.15)' } : {}}
                     >
                       <Edit2 size={12} />
                     </ServerRemoveBtn>
-                    <ServerRemoveBtn onClick={() => removeDiscordServer(s.guild_id)} title="Remove server">
+                    <ServerRemoveBtn onClick={e => { e.stopPropagation(); removeDiscordServer(s.guild_id); }} title="Remove server">
                       <X size={14} />
                     </ServerRemoveBtn>
                   </ServerDropdownItem>
@@ -1374,16 +1378,17 @@ export default function DinoTrackerPage() {
         </Header>
 
         <Section>
-          <DinoMonitorPanel discordServers={discordServers} setDiscordServers={setDiscordServers} />
+          <DinoMonitorPanel discordServers={discordServers} setDiscordServers={setDiscordServers} selectedGuildId={selectedGuildId} />
         </Section>
       </Content>
     </Container>
   );
 }
 
-function DinoMonitorPanel({ discordServers, setDiscordServers }: {
+function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }: {
   discordServers: DiscordServerConfig[];
   setDiscordServers: (servers: DiscordServerConfig[]) => void;
+  selectedGuildId: string | null;
 }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1799,13 +1804,15 @@ function DinoMonitorPanel({ discordServers, setDiscordServers }: {
         </MonitorCard>
       </MonitorGrid>
 
-      {/* Per-Guild Nitrado Config */}
-      {discordServers.map(guild => {
+      {/* Selected Guild Nitrado Config */}
+      {(() => {
+        const guild = discordServers.find(s => s.guild_id === selectedGuildId);
+        if (!guild) return null;
         const guildServers = guildAvailableServers[guild.guild_id] || [];
         const error = guildServerError[guild.guild_id] || '';
         const isFetching = fetchingGuild === guild.guild_id;
         return (
-          <MonitorCard key={guild.guild_id} style={{ marginTop: '20px' }}>
+          <MonitorCard style={{ marginTop: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <MonitorCardTitle style={{ margin: 0 }}>
                 {guild.guild_name || guild.guild_id}
@@ -1850,14 +1857,14 @@ function DinoMonitorPanel({ discordServers, setDiscordServers }: {
                   );
                 })}
               </ServersGrid>
-            ) : config.servers.length > 0 && !guild.nitrado_token ? (
+            ) : !guild.nitrado_token ? (
               <div style={{ color: '#9ca3af', fontSize: '0.8rem', padding: '8px 0' }}>
                 Enter a Nitrado token and click Fetch Servers to configure.
               </div>
             ) : null}
           </MonitorCard>
         );
-      })}
+      })()}
 
 
       {/* Species Thresholds */}
