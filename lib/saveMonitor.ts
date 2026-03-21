@@ -81,8 +81,8 @@ async function scanServer(
     const meleePoints = dino.wildStats[8] || 0;
     const actualHp = dino.currentStats[0] || 0;
 
-    const hpThreshold = threshold?.hp ?? minPoints;
-    const meleeThreshold = threshold?.melee ?? minPoints;
+    const hpThreshold = threshold ? threshold.hp : minPoints;
+    const meleeThreshold = threshold ? threshold.melee : minPoints;
 
     const hpExceeds = hpThreshold !== null && hpPoints >= hpThreshold;
     const meleeExceeds = meleeThreshold !== null && meleePoints >= meleeThreshold;
