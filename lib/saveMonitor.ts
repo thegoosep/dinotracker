@@ -300,3 +300,8 @@ export function getMonitorStatus() {
     log: state.log,
   };
 }
+
+// Auto-start monitor on server boot
+if (!getState().running) {
+  startMonitor(60);
+}
