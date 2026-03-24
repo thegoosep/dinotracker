@@ -1317,12 +1317,13 @@ export default function DinoTrackerPage() {
     );
   }
 
-  if (!setupComplete || showWizard) {
+  // Show setup wizard if no servers or explicitly requested
+  if (!setupComplete || showWizard || discordServers.length === 0) {
     return <SetupWizard onComplete={() => { setShowWizard(false); loadConfig(); }} />;
   }
 
   // Safety check - don't render until we have a selectedGuildId
-  if (discordServers.length > 0 && !selectedGuildId) {
+  if (!selectedGuildId) {
     return (
       <LoginContainer>
         <GlobalStyles />
