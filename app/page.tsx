@@ -1416,6 +1416,12 @@ function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }
 
   // Helper to get current guild's configuration
   const getCurrentGuildConfig = () => {
+    if (!selectedGuildId || !discordServers || discordServers.length === 0) {
+      return {
+        servers: [],
+        species_thresholds: {},
+      };
+    }
     const guild = discordServers.find(s => s.guild_id === selectedGuildId);
     return {
       servers: guild?.servers || [],
