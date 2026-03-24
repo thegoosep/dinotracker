@@ -2032,7 +2032,7 @@ function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }
               style={{ width: 'auto', fontSize: '0.85rem', padding: '4px 8px' }}
             >
               <option value="">All Servers</option>
-              {config.servers.map(s => (
+              {guildConfig.servers.map(s => (
                 <option key={s.service_id} value={s.service_id}>{s.name}</option>
               ))}
             </FormSelect>
