@@ -911,18 +911,13 @@ interface DiscordServerConfig {
 }
 
 function SetupWizard({ onComplete }: { onComplete: () => void }) {
-  const [step, setStep] = useState<'guilds' | 'channels'>('guilds');
+  const [step, setStep] = useState<'guilds' | 'channel'>('guilds');
   const [guilds, setGuilds] = useState<Guild[]>([]);
   const [selectedGuild, setSelectedGuild] = useState<Guild | null>(null);
-  const [channels, setChannels] = useState<ForumChannel[]>([]);
-  const [selectedChannel, setSelectedChannel] = useState<ForumChannel | null>(null);
+  const [channelId, setChannelId] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [creatingChannel, setCreatingChannel] = useState(false);
   const [error, setError] = useState('');
-  const [needsBot, setNeedsBot] = useState(false);
-
-  const clientId = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID || '';
 
   useEffect(() => {
     fetchGuilds();
@@ -951,68 +946,18 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
     setLoading(false);
   };
 
-  const handleGuildSelect = async (guild: Guild) => {
+  const handleGuildSelect = (guild: Guild) => {
     setSelectedGuild(guild);
     setError('');
-    setNeedsBot(false);
-    setStep('channels');
-    fetchChannels(guild.id);
-  };
-
-  const fetchChannels = async (guildId: string) => {
-    setLoading(true);
-    setError('');
-    setNeedsBot(false);
-    try {
-      const resp = await fetch(`/api/discord/guilds/${guildId}/channels`);
-      if (resp.status === 403) {
-        setNeedsBot(true);
-        setError('Bot needs to be added to this server first.');
-        setLoading(false);
-        return;
-      }
-      if (!resp.ok) {
-        setError('Failed to fetch channels');
-        setLoading(false);
-        return;
-      }
-      const data = await resp.json();
-      setChannels(data.channels || []);
-      if (data.channels?.length === 0) {
-        setError('No forum channels found.');
-      }
-    } catch {
-      setError('Failed to fetch channels');
-    }
+    setStep('channel');
     setLoading(false);
   };
 
-  const createForumChannel = async () => {
-    if (!selectedGuild) return;
-    setCreatingChannel(true);
-    setError('');
-    try {
-      const resp = await fetch(`/api/discord/guilds/${selectedGuild.id}/channels`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'dino-alerts' }),
-      });
-      if (!resp.ok) {
-        const data = await resp.json();
-        setError(data.error || 'Failed to create channel');
-        setCreatingChannel(false);
-        return;
-      }
-      // Refresh channel list
-      await fetchChannels(selectedGuild.id);
-    } catch {
-      setError('Failed to create channel');
-    }
-    setCreatingChannel(false);
-  };
-
   const handleFinish = async () => {
-    if (!selectedGuild || !selectedChannel) return;
+    if (!selectedGuild || !channelId.trim()) {
+      setError('Please enter a forum channel ID');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
@@ -1025,8 +970,8 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
       const newServer: DiscordServerConfig = {
         guild_id: selectedGuild.id,
         guild_name: selectedGuild.name,
-        forum_channel_id: selectedChannel.id,
-        forum_channel_name: selectedChannel.name,
+        forum_channel_id: channelId.trim(),
+        forum_channel_name: '',
       };
 
       await fetch('/api/admin/dino-monitor', {
@@ -1089,57 +1034,29 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
           </>
         )}
 
-        {step === 'channels' && selectedGuild && (
+        {step === 'channel' && selectedGuild && (
           <>
-            <WizardTitle>Select Forum Channel</WizardTitle>
-            <WizardSubtitle>Pick the forum channel in <strong style={{ color: 'white' }}>{selectedGuild.name}</strong> for dino alerts</WizardSubtitle>
-            {loading ? (
-              <div style={{ color: '#9ca3af', textAlign: 'center', padding: '24px 0' }}>Loading channels...</div>
-            ) : (
-              <>
-                <InviteLink href={botInviteUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', width: '100%', justifyContent: 'center', marginBottom: 16 }}>
-                  <ExternalLink size={18} />
-                  Add Bot to {selectedGuild.name}
-                </InviteLink>
-                {needsBot && (
-                  <WizardButton onClick={() => fetchChannels(selectedGuild.id)} style={{ marginBottom: 16 }}>
-                    <RefreshCw size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />
-                    Refresh Channels
-                  </WizardButton>
-                )}
-                {!needsBot && (
-                  <>
-                    <ChannelList>
-                      {channels.map(ch => (
-                        <ChannelItem
-                          key={ch.id}
-                          $selected={selectedChannel?.id === ch.id}
-                          onClick={() => setSelectedChannel(ch)}
-                        >
-                          <Hash size={18} color="#9ca3af" />
-                          <span style={{ fontWeight: 600 }}>{ch.name}</span>
-                        </ChannelItem>
-                      ))}
-                    </ChannelList>
-                    <WizardButton
-                      disabled={creatingChannel}
-                      onClick={createForumChannel}
-                      style={{ marginTop: 12, background: 'rgba(30, 30, 30, 0.6)', borderColor: 'rgba(100, 100, 100, 0.4)' }}
-                    >
-                      <Plus size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />
-                      {creatingChannel ? 'Creating...' : 'Create Forum Channel'}
-                    </WizardButton>
-                    <WizardButton
-                      disabled={!selectedChannel || saving}
-                      onClick={handleFinish}
-                    >
-                      {saving ? 'Saving...' : 'Continue to Dashboard'}
-                    </WizardButton>
-                  </>
-                )}
-              </>
-            )}
-            <GuildItem onClick={() => { setStep('guilds'); setSelectedGuild(null); setSelectedChannel(null); setNeedsBot(false); setError(''); }} style={{ marginTop: 8 }}>
+            <WizardTitle>Enter Forum Channel ID</WizardTitle>
+            <WizardSubtitle>Paste the forum channel ID from <strong style={{ color: 'white' }}>{selectedGuild.name}</strong></WizardSubtitle>
+            <div style={{ width: '100%', marginTop: '16px' }}>
+              <FormInput
+                type="text"
+                value={channelId}
+                onChange={(e) => setChannelId(e.target.value)}
+                placeholder="Paste channel ID (e.g., 1234567890123456789)"
+                style={{ width: '100%', marginBottom: '8px' }}
+              />
+              <small style={{ color: '#6b7280', fontSize: '0.75rem', display: 'block', marginBottom: '16px' }}>
+                Right-click the forum channel in Discord → Copy Channel ID
+              </small>
+              <WizardButton
+                disabled={!channelId.trim() || saving}
+                onClick={handleFinish}
+              >
+                {saving ? 'Saving...' : 'Continue to Dashboard'}
+              </WizardButton>
+            </div>
+            <GuildItem onClick={() => { setStep('guilds'); setSelectedGuild(null); setChannelId(''); setError(''); }} style={{ marginTop: 8 }}>
               <span style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Back to server list</span>
             </GuildItem>
           </>
@@ -1347,35 +1264,9 @@ export default function DinoTrackerPage() {
             </ServerDropdownToggle>
             {serverDropdownOpen && (
               <ServerDropdownMenu>
-                {editingGuildId && (
-                  <ChannelPickerPanel>
-                    <ChannelPickerTitle>
-                      Select Forum Channel — {discordServers.find(s => s.guild_id === editingGuildId)?.guild_name}
-                    </ChannelPickerTitle>
-                    {editLoading ? (
-                      <div style={{ color: '#9ca3af', fontSize: '0.8rem', padding: '12px 8px', textAlign: 'center' }}>Loading channels...</div>
-                    ) : editChannels.length === 0 ? (
-                      <div style={{ color: '#ef4444', fontSize: '0.8rem', padding: '12px 8px', textAlign: 'center' }}>No forum channels found</div>
-                    ) : (
-                      editChannels.map(ch => {
-                        const currentServer = discordServers.find(s => s.guild_id === editingGuildId);
-                        return (
-                          <ChannelPickerItem
-                            key={ch.id}
-                            $active={ch.id === currentServer?.forum_channel_id}
-                            onClick={() => updateServerChannel(editingGuildId, ch)}
-                          >
-                            <Hash size={14} />
-                            {ch.name}
-                          </ChannelPickerItem>
-                        );
-                      })
-                    )}
-                  </ChannelPickerPanel>
-                )}
                 {discordServers.map(s => (
                   <ServerDropdownItem key={s.guild_id} style={{
-                    background: selectedGuildId === s.guild_id ? 'rgba(168,85,247,0.15)' : editingGuildId === s.guild_id ? 'rgba(168,85,247,0.1)' : 'transparent',
+                    background: selectedGuildId === s.guild_id ? 'rgba(168,85,247,0.15)' : 'transparent',
                     borderRadius: '6px',
                     cursor: 'pointer',
                     borderLeft: selectedGuildId === s.guild_id ? '2px solid #a855f7' : '2px solid transparent',
@@ -1389,14 +1280,7 @@ export default function DinoTrackerPage() {
                       />
                     </ColorPickerWrapper>
                     <span style={{ flex: 1 }}>{s.guild_name || s.guild_id}</span>
-                    <span style={{ color: '#6b7280', fontSize: '0.7rem' }}>#{s.forum_channel_name || s.forum_channel_id}</span>
-                    <ServerRemoveBtn
-                      onClick={e => { e.stopPropagation(); editingGuildId === s.guild_id ? setEditingGuildId(null) : startEditChannel(s.guild_id); }}
-                      title="Change forum channel"
-                      style={editingGuildId === s.guild_id ? { color: '#a855f7', background: 'rgba(168,85,247,0.15)' } : {}}
-                    >
-                      <Edit2 size={12} />
-                    </ServerRemoveBtn>
+                    <span style={{ color: '#6b7280', fontSize: '0.7rem' }}>#{s.forum_channel_id}</span>
                     <ServerRemoveBtn onClick={e => { e.stopPropagation(); removeDiscordServer(s.guild_id); }} title="Remove server">
                       <X size={14} />
                     </ServerRemoveBtn>
@@ -1607,6 +1491,12 @@ function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }
     setDiscordServers(updated);
   };
 
+  const updateGuildForumChannel = (guildId: string, channelId: string) => {
+    const updated = discordServers.map(s =>
+      s.guild_id === guildId ? { ...s, forum_channel_id: channelId } : s
+    );
+    setDiscordServers(updated);
+  };
 
   const toggleSpecies = (speciesId: string) => {
     const guildConfig = getCurrentGuildConfig();
@@ -1896,6 +1786,18 @@ function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }
                 #{guild.forum_channel_name || guild.forum_channel_id}
               </span>
             </div>
+            <FormGroup style={{ marginBottom: '12px' }}>
+              <FormLabel>Forum Channel ID</FormLabel>
+              <FormInput
+                type="text"
+                value={guild.forum_channel_id || ''}
+                onChange={(e) => updateGuildForumChannel(guild.guild_id, e.target.value)}
+                placeholder="Paste Discord forum channel ID (e.g., 1234567890123456789)"
+              />
+              <small style={{ color: '#6b7280', fontSize: '0.75rem', marginTop: '4px', display: 'block' }}>
+                Right-click channel in Discord → Copy Channel ID
+              </small>
+            </FormGroup>
             <FormGroup style={{ marginBottom: '12px' }}>
               <FormLabel>Nitrado API Token</FormLabel>
               <div style={{ display: 'flex', gap: '8px' }}>
