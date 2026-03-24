@@ -1167,7 +1167,13 @@ export default function DinoTrackerPage() {
 
   const loadConfig = useCallback(() => {
     fetch('/api/admin/dino-monitor')
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) {
+          console.error('Failed to fetch config:', r.status, r.statusText);
+          throw new Error(`HTTP ${r.status}`);
+        }
+        return r.json();
+      })
       .then(data => {
         const config = data.config || {};
         const servers = config.discord_servers || [];
@@ -1179,13 +1185,23 @@ export default function DinoTrackerPage() {
           setSetupComplete(false);
         }
       })
-      .catch(() => setSetupComplete(false));
+      .catch(err => {
+        console.error('loadConfig error:', err);
+        setSetupComplete(false);
+      });
   }, []);
 
   useEffect(() => {
     if (!session) return;
     loadConfig();
   }, [session, loadConfig]);
+
+  // Ensure selectedGuildId is set when discordServers loads
+  useEffect(() => {
+    if (!selectedGuildId && discordServers.length > 0) {
+      setSelectedGuildId(discordServers[0].guild_id);
+    }
+  }, [discordServers, selectedGuildId]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -1303,6 +1319,16 @@ export default function DinoTrackerPage() {
 
   if (!setupComplete || showWizard) {
     return <SetupWizard onComplete={() => { setShowWizard(false); loadConfig(); }} />;
+  }
+
+  // Safety check - don't render until we have a selectedGuildId
+  if (discordServers.length > 0 && !selectedGuildId) {
+    return (
+      <LoginContainer>
+        <GlobalStyles />
+        <div style={{ color: '#9ca3af', fontSize: '1.1rem' }}>Loading...</div>
+      </LoginContainer>
+    );
   }
 
   return (
