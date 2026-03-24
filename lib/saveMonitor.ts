@@ -58,6 +58,8 @@ async function scanServer(
   minPoints: number,
   maxLevel: number,
   baseUrl: string,
+  guildId: string,
+  forumChannelId: string,
   saveModifiedAt?: number,
   saveInfo?: any,
   token?: string
@@ -109,7 +111,8 @@ async function scanServer(
 
   let alertCount = 0;
   if (serverEmbeds.length > 0) {
-    const threads = await getOrCreateServerThreads(server.name);
+    // Post to THIS GUILD'S forum only
+    const threads = await getOrCreateServerThreads(server.name, guildId, forumChannelId);
     for (const { threadId, embedColor } of threads) {
       for (let i = 0; i < serverEmbeds.length; i += 10) {
         const batch = serverEmbeds.slice(i, i + 10).map(e =>
@@ -142,105 +145,135 @@ async function checkAndScan() {
     const localConfig = loadLocalConfig();
     if (!localConfig) { log('No config found, skipping'); return; }
 
-    const speciesThresholds = localConfig.species_thresholds || {};
     const minPoints = localConfig.min_points || 35;
     const maxLevel = localConfig.max_level || 180;
-    const configServers = localConfig.servers || [];
     const discordServers = localConfig.discord_servers || [];
-    const globalToken = localConfig.nitrado_token || '';
 
-    if (configServers.length === 0) { log('No servers configured'); return; }
-
-    // Collect unique Nitrado tokens from discord servers (fall back to global)
-    const tokens = new Set<string>();
-    for (const ds of discordServers) {
-      tokens.add(ds.nitrado_token || globalToken);
-    }
-    if (tokens.size === 0 && globalToken) tokens.add(globalToken);
-
-    // Build a set of configured service_ids with their names
-    const configNameMap = new Map(configServers.map((s: any) => [String(s.service_id), s.name]));
-
-    // Fetch game servers from each unique token
-    const toCheck: Array<{ server: any; token: string }> = [];
-    for (const token of tokens) {
-      if (!token) continue;
-      try {
-        const servers = await getServerList(token);
-        for (const s of servers) {
-          if (configNameMap.has(s.service_id)) {
-            toCheck.push({
-              server: { ...s, name: configNameMap.get(s.service_id) || s.name },
-              token,
-            });
-          }
-        }
-      } catch (error) {
-        log(`Failed to get server list for token: ${error}`);
-      }
-    }
-
-    if (toCheck.length === 0) { log('No matching servers on Nitrado'); return; }
+    if (discordServers.length === 0) { log('No guilds configured'); return; }
 
     const baseUrl = process.env.NEXTAUTH_URL || `https://${process.env.VERCEL_URL}` || 'http://localhost:3001';
     const now = Date.now();
     const forceFullScan = (now - state.lastFullScan) >= FULL_SCAN_INTERVAL_MS;
 
-    if (forceFullScan) {
-      // Full scan of all servers
-      log(`Full scan starting (${toCheck.length} servers)...`);
-      let totalAlerts = 0;
+    let totalServersChecked = 0;
+    let totalAlerts = 0;
 
-      for (const { server, token } of toCheck) {
-        try {
-          // Update saved timestamps while we're at it
-          const info = await getSaveFileInfo(server.service_id, server, token);
-          if (info) state.lastSaves[server.service_id] = info.modified_at;
+    // Process each guild independently
+    for (const guild of discordServers) {
+      const guildToken = guild.nitrado_token;
+      const guildServers = guild.servers || [];
+      const guildThresholds = guild.species_thresholds || {};
 
-          const { alerts, found } = await scanServer(server, speciesThresholds, minPoints, maxLevel, baseUrl, info?.modified_at, info, token);
-          totalAlerts += alerts;
-          state.alertCount += alerts;
-          state.scanCount++;
-          log(`${server.name} (${getMapDisplayName(server.map)}): ${alerts} alerts sent (${found} found)`);
-        } catch (error) {
-          log(`Error scanning ${server.name}: ${error}`);
-        }
+      if (!guildToken) {
+        log(`Skipping guild ${guild.guild_name} (no Nitrado token)`);
+        continue;
       }
 
+      if (guildServers.length === 0) {
+        log(`Skipping guild ${guild.guild_name} (no servers configured)`);
+        continue;
+      }
+
+      // Get all available servers from Nitrado for this guild's token
+      let availableServers: any[] = [];
+      try {
+        availableServers = await getServerList(guildToken);
+      } catch (error) {
+        log(`Failed to fetch servers for guild ${guild.guild_name}: ${error}`);
+        continue;
+      }
+
+      // Filter to only configured servers
+      const serversToCheck = availableServers.filter(s =>
+        guildServers.some((gs: any) => gs.service_id === s.service_id)
+      ).map(s => ({
+        ...s,
+        name: guildServers.find((gs: any) => gs.service_id === s.service_id)?.name || s.name,
+      }));
+
+      if (serversToCheck.length === 0) {
+        log(`No matching servers on Nitrado for guild ${guild.guild_name}`);
+        continue;
+      }
+
+      if (forceFullScan) {
+        // Full scan of all servers for this guild
+        log(`Full scan for guild ${guild.guild_name} (${serversToCheck.length} servers)...`);
+
+        for (const server of serversToCheck) {
+          totalServersChecked++;
+          try {
+            // Update saved timestamps while we're at it
+            const info = await getSaveFileInfo(server.service_id, server, guildToken);
+            if (info) state.lastSaves[`${guild.guild_id}:${server.service_id}`] = info.modified_at;
+
+            const { alerts, found } = await scanServer(
+              server,
+              guildThresholds,
+              minPoints,
+              maxLevel,
+              baseUrl,
+              guild.guild_id,
+              guild.forum_channel_id,
+              info?.modified_at,
+              info,
+              guildToken
+            );
+            totalAlerts += alerts;
+            state.alertCount += alerts;
+            state.scanCount++;
+            log(`${server.name} (${getMapDisplayName(server.map)}, ${guild.guild_name}): ${alerts} alerts sent (${found} found)`);
+          } catch (error) {
+            log(`Error scanning ${server.name} for guild ${guild.guild_name}: ${error}`);
+          }
+        }
+      } else {
+        // Quick check — only scan servers with new saves
+        for (const server of serversToCheck) {
+          totalServersChecked++;
+          try {
+            const info = await getSaveFileInfo(server.service_id, server, guildToken);
+            if (!info) continue;
+
+            const cacheKey = `${guild.guild_id}:${server.service_id}`;
+            const lastModified = state.lastSaves[cacheKey] || 0;
+            if (info.modified_at <= lastModified) continue;
+
+            log(`New save: ${server.name} (${getMapDisplayName(server.map)}, ${guild.guild_name}) — modified_at changed`);
+            state.lastSaves[cacheKey] = info.modified_at;
+
+            const { alerts, found } = await scanServer(
+              server,
+              guildThresholds,
+              minPoints,
+              maxLevel,
+              baseUrl,
+              guild.guild_id,
+              guild.forum_channel_id,
+              info.modified_at,
+              info,
+              guildToken
+            );
+            totalAlerts += alerts;
+            state.alertCount += alerts;
+            state.scanCount++;
+            log(`${server.name} (${getMapDisplayName(server.map)}, ${guild.guild_name}): ${alerts} alerts sent (${found} found)`);
+          } catch (error) {
+            log(`Error checking ${server.name} for guild ${guild.guild_name}: ${error}`);
+          }
+        }
+      }
+    }
+
+    if (forceFullScan) {
       state.lastFullScan = now;
       state.lastScan = new Date().toISOString();
-      log(`Full scan complete: ${totalAlerts} total alerts across ${toCheck.length} servers`);
+      log(`Full scan complete: ${totalAlerts} total alerts across ${totalServersChecked} servers`);
     } else {
-      // Quick check — only scan servers with new saves
-      let newSavesFound = 0;
-
-      for (const { server, token } of toCheck) {
-        try {
-          const info = await getSaveFileInfo(server.service_id, server, token);
-          if (!info) continue;
-
-          const lastModified = state.lastSaves[server.service_id] || 0;
-          if (info.modified_at <= lastModified) continue;
-
-          newSavesFound++;
-          log(`New save: ${server.name} (${getMapDisplayName(server.map)}) — modified_at changed`);
-          state.lastSaves[server.service_id] = info.modified_at;
-
-          const { alerts, found } = await scanServer(server, speciesThresholds, minPoints, maxLevel, baseUrl, info.modified_at, info, token);
-          state.alertCount += alerts;
-          state.scanCount++;
-          log(`${server.name} (${getMapDisplayName(server.map)}): ${alerts} alerts sent (${found} found)`);
-        } catch (error) {
-          log(`Error checking ${server.name}: ${error}`);
-        }
-      }
-
-      if (newSavesFound === 0) {
-        log(`Checked ${toCheck.length} servers — no new saves`);
-      } else {
+      if (totalAlerts > 0) {
         state.lastScan = new Date().toISOString();
-        log(`${newSavesFound} new saves processed`);
       }
+      log(`Checked ${totalServersChecked} servers — ${totalAlerts > 0 ? `${totalAlerts} alerts sent` : 'no new saves'}`);
     }
   } finally {
     state.scanning = false;

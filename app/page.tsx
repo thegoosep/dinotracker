@@ -726,15 +726,28 @@ const ServerDropdownToggle = styled.button`
 
 const ServerDropdownMenu = styled.div`
   position: absolute;
-  bottom: calc(100% + 4px);
+  top: calc(100% + 4px);
   right: 0;
   background: rgba(15, 15, 15, 0.98);
   border: 1px solid rgba(168, 85, 247, 0.4);
   border-radius: 8px;
   padding: 6px;
   min-width: 300px;
+  max-height: 400px;
+  overflow-y: auto;
   z-index: 9999;
   box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: #333;
+    border-radius: 3px;
+  }
 `;
 
 const ChannelPickerPanel = styled.div`
@@ -893,6 +906,8 @@ interface DiscordServerConfig {
   forum_channel_name: string;
   embed_color?: string;
   nitrado_token?: string;
+  servers?: Array<{ service_id: string; name: string }>;
+  species_thresholds?: Record<string, { hp: number | null; melee: number | null }>;
 }
 
 function SetupWizard({ onComplete }: { onComplete: () => void }) {
@@ -1397,9 +1412,26 @@ function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }
     discord_webhook_url: '',
     min_points: 35,
     max_level: 180,
-    species_thresholds: {} as Record<string, { hp: number | null; melee: number | null }>,
-    servers: [] as { service_id: string; name: string }[],
   });
+
+  // Helper to get current guild's configuration
+  const getCurrentGuildConfig = () => {
+    const guild = discordServers.find(s => s.guild_id === selectedGuildId);
+    return {
+      servers: guild?.servers || [],
+      species_thresholds: guild?.species_thresholds || {},
+    };
+  };
+
+  // Helper to update current guild's configuration
+  const updateCurrentGuildConfig = (updates: Partial<Pick<DiscordServerConfig, 'servers' | 'species_thresholds'>>) => {
+    if (!selectedGuildId) return;
+    setDiscordServers(prev => prev.map(server =>
+      server.guild_id === selectedGuildId
+        ? { ...server, ...updates }
+        : server
+    ));
+  };
 
   // Per-guild server fetching
   const [guildAvailableServers, setGuildAvailableServers] = useState<Record<string, Array<{
@@ -1426,6 +1458,7 @@ function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }
       const response = await fetch('/api/admin/dino-monitor');
       const data = await response.json();
       if (data.config) {
+        // Migration: if global species_thresholds/servers exist, move them to each guild
         let thresholds = data.config.species_thresholds || {};
         if (data.config.species_to_monitor && Object.keys(thresholds).length === 0) {
           const minPts = data.config.min_points || 35;
@@ -1433,12 +1466,35 @@ function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }
             thresholds[id] = { hp: minPts, melee: minPts };
           }
         }
+        const globalServers = data.config.servers || [];
+
+        // Migrate global config to per-guild if needed
+        if ((Object.keys(thresholds).length > 0 || globalServers.length > 0) && data.config.discord_servers) {
+          const updatedServers = data.config.discord_servers.map((server: DiscordServerConfig) => ({
+            ...server,
+            species_thresholds: server.species_thresholds || thresholds,
+            servers: server.servers || globalServers,
+          }));
+          setDiscordServers(updatedServers);
+
+          // Save migrated config
+          await fetch('/api/admin/dino-monitor', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...data.config,
+              discord_servers: updatedServers,
+              // Clear global values after migration
+              species_thresholds: {},
+              servers: [],
+            }),
+          });
+        }
+
         setConfig({
           discord_webhook_url: data.config.discord_webhook_url ?? '',
           min_points: data.config.min_points || 35,
           max_level: data.config.max_level || 180,
-          species_thresholds: thresholds,
-          servers: data.config.servers || [],
         });
       }
     } catch (error) {
@@ -1502,14 +1558,12 @@ function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }
   };
 
   const toggleServer = (server: { service_id: string; name: string }) => {
-    setConfig(prev => {
-      const exists = prev.servers.some(s => s.service_id === server.service_id);
-      return {
-        ...prev,
-        servers: exists
-          ? prev.servers.filter(s => s.service_id !== server.service_id)
-          : [...prev.servers, { service_id: server.service_id, name: server.name }],
-      };
+    const guildConfig = getCurrentGuildConfig();
+    const exists = guildConfig.servers.some(s => s.service_id === server.service_id);
+    updateCurrentGuildConfig({
+      servers: exists
+        ? guildConfig.servers.filter(s => s.service_id !== server.service_id)
+        : [...guildConfig.servers, { service_id: server.service_id, name: server.name }],
     });
   };
 
@@ -1522,59 +1576,55 @@ function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }
 
 
   const toggleSpecies = (speciesId: string) => {
-    setConfig(prev => {
-      const newThresholds = { ...prev.species_thresholds };
-      if (newThresholds[speciesId]) {
-        delete newThresholds[speciesId];
-      } else {
-        newThresholds[speciesId] = { hp: prev.min_points, melee: prev.min_points };
-      }
-      return { ...prev, species_thresholds: newThresholds };
-    });
+    const guildConfig = getCurrentGuildConfig();
+    const newThresholds = { ...guildConfig.species_thresholds };
+    if (newThresholds[speciesId]) {
+      delete newThresholds[speciesId];
+    } else {
+      newThresholds[speciesId] = { hp: config.min_points, melee: config.min_points };
+    }
+    updateCurrentGuildConfig({ species_thresholds: newThresholds });
   };
 
   const updateThreshold = (speciesId: string, stat: 'hp' | 'melee', value: number) => {
-    setConfig(prev => ({
-      ...prev,
+    const guildConfig = getCurrentGuildConfig();
+    updateCurrentGuildConfig({
       species_thresholds: {
-        ...prev.species_thresholds,
+        ...guildConfig.species_thresholds,
         [speciesId]: {
-          ...prev.species_thresholds[speciesId],
+          ...guildConfig.species_thresholds[speciesId],
           [stat]: value,
         },
       },
-    }));
+    });
   };
 
   const toggleVoid = (speciesId: string, stat: 'hp' | 'melee') => {
-    setConfig(prev => {
-      const threshold = prev.species_thresholds[speciesId];
-      if (!threshold) return prev;
-      return {
-        ...prev,
-        species_thresholds: {
-          ...prev.species_thresholds,
-          [speciesId]: {
-            ...threshold,
-            [stat]: threshold[stat] === null ? prev.min_points : null,
-          },
+    const guildConfig = getCurrentGuildConfig();
+    const threshold = guildConfig.species_thresholds[speciesId];
+    if (!threshold) return;
+    updateCurrentGuildConfig({
+      species_thresholds: {
+        ...guildConfig.species_thresholds,
+        [speciesId]: {
+          ...threshold,
+          [stat]: threshold[stat] === null ? config.min_points : null,
         },
-      };
+      },
     });
   };
 
   const selectAllSpecies = () => {
-    setConfig(prev => {
-      const newThresholds: Record<string, { hp: number | null; melee: number | null }> = {};
-      for (const s of ALL_SPECIES) {
-        newThresholds[s.id] = prev.species_thresholds[s.id] || { hp: prev.min_points, melee: prev.min_points };
-      }
-      return { ...prev, species_thresholds: newThresholds };
-    });
+    const guildConfig = getCurrentGuildConfig();
+    const newThresholds: Record<string, { hp: number | null; melee: number | null }> = {};
+    for (const s of ALL_SPECIES) {
+      newThresholds[s.id] = guildConfig.species_thresholds[s.id] || { hp: config.min_points, melee: config.min_points };
+    }
+    updateCurrentGuildConfig({ species_thresholds: newThresholds });
   };
 
   const clearAllSpecies = () => {
-    setConfig(prev => ({ ...prev, species_thresholds: {} }));
+    updateCurrentGuildConfig({ species_thresholds: {} });
   };
 
   const loadDefaultThresholds = () => {
@@ -1598,7 +1648,8 @@ function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }
       Tusoteuthis: { hp: 30, melee: 30 },
       Paracer: { hp: 30, melee: null },
     };
-    setConfig(prev => ({ ...prev, species_thresholds: defaults, min_points: 33 }));
+    updateCurrentGuildConfig({ species_thresholds: defaults });
+    setConfig(prev => ({ ...prev, min_points: 33 }));
   };
 
   const [testingNotify, setTestingNotify] = useState(false);
@@ -1726,7 +1777,8 @@ function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }
     return <div style={{ color: 'white' }}>Loading monitor config...</div>;
   }
 
-  const enabledCount = Object.keys(config.species_thresholds).length;
+  const guildConfig = getCurrentGuildConfig();
+  const enabledCount = Object.keys(guildConfig.species_thresholds).length;
 
   return (
     <MonitorContainer>
@@ -1832,7 +1884,7 @@ function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }
             {guildServers.length > 0 ? (
               <ServersGrid>
                 {guildServers.map(server => {
-                  const isSelected = config.servers.some(s => s.service_id === server.service_id);
+                  const isSelected = guildConfig.servers.some(s => s.service_id === server.service_id);
                   return (
                     <ServerCheckboxLabel key={server.service_id} $checked={isSelected}>
                       <input
@@ -1876,8 +1928,8 @@ function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }
         </ThresholdHeader>
         <SpeciesThresholdGrid>
           {ALL_SPECIES.map(species => {
-            const enabled = !!config.species_thresholds[species.id];
-            const thresholds = config.species_thresholds[species.id] || { hp: config.min_points, melee: config.min_points };
+            const enabled = !!guildConfig.species_thresholds[species.id];
+            const thresholds = guildConfig.species_thresholds[species.id] || { hp: config.min_points, melee: config.min_points };
             return (
               <SpeciesRow key={species.id} $enabled={enabled}>
                 <input
@@ -1979,7 +2031,7 @@ function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }
               </thead>
               <tbody>
                 {results.map((r: any) => {
-                  const th = config.species_thresholds[r.species];
+                  const th = guildConfig.species_thresholds[r.species];
                   const hpHigh = th ? (th.hp !== null ? r.hp_points >= th.hp : false) : r.hp_points >= config.min_points;
                   const meleeHigh = th ? (th.melee !== null ? r.melee_points >= th.melee : false) : r.melee_points >= config.min_points;
                   return (

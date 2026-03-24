@@ -22,166 +22,172 @@ export async function POST(request: Request) {
       configData = loadLocalConfig();
     }
 
-    const speciesThresholds = configData?.species_thresholds || {};
     const minPoints = configData?.min_points || 35;
     const maxLevel = configData?.max_level || 180;
-    const configuredServers: any[] = configData?.servers || [];
     const discordServers: any[] = configData?.discord_servers || [];
-    const globalToken = configData?.nitrado_token || '';
 
-    log(`[Scan] Config loaded: ${Object.keys(speciesThresholds).length} species thresholds, minPoints=${minPoints}, maxLevel=${maxLevel}`);
+    log(`[Scan] Config loaded: ${discordServers.length} guilds configured, minPoints=${minPoints}, maxLevel=${maxLevel}`);
 
-    // Build a set of configured service_ids with their names
-    const configNameMap = new Map(configuredServers.map((s: any) => [String(s.service_id), s.name]));
-
-    // Collect unique Nitrado tokens from discord servers (fall back to global)
-    const tokens = new Set<string>();
-    for (const ds of discordServers) {
-      tokens.add(ds.nitrado_token || globalToken);
-    }
-    // If no discord servers configured, use global token
-    if (tokens.size === 0 && globalToken) tokens.add(globalToken);
-
-    // Fetch game servers from each unique token
-    const allGameServers: Array<{ server: any; token: string }> = [];
-    for (const token of tokens) {
-      if (!token) continue;
-      try {
-        const servers = await getServerList(token);
-        for (const s of servers) {
-          if (configNameMap.has(s.service_id)) {
-            allGameServers.push({
-              server: { ...s, name: configNameMap.get(s.service_id) || s.name },
-              token,
-            });
-          }
-        }
-      } catch (error) {
-        log(`[Scan] Failed to fetch servers for token: ${error}`);
-      }
-    }
-
-    const toScan = targetServiceId
-      ? allGameServers.filter(gs => gs.server.service_id === targetServiceId)
-      : allGameServers;
-
-    if (toScan.length === 0) {
-      return NextResponse.json({ error: 'No servers found to scan' }, { status: 404 });
+    if (discordServers.length === 0) {
+      return NextResponse.json({ error: 'No guilds configured' }, { status: 404 });
     }
 
     const baseUrl = process.env.NEXTAUTH_URL || `https://${process.env.VERCEL_URL}` || 'http://localhost:3001';
     const allResults: any[] = [];
+    let totalServersScanned = 0;
 
-    for (const { server, token } of toScan) {
-      log(`[Scan] === Scanning ${server.name} (${getMapDisplayName(server.map)}) ===`);
+    // Scan each guild independently
+    for (const guild of discordServers) {
+      const guildToken = guild.nitrado_token;
+      const guildServers = guild.servers || [];
+      const guildThresholds = guild.species_thresholds || {};
 
+      if (!guildToken) {
+        log(`[Scan] Skipping guild ${guild.guild_name} (no Nitrado token)`);
+        continue;
+      }
+
+      if (guildServers.length === 0) {
+        log(`[Scan] Skipping guild ${guild.guild_name} (no servers configured)`);
+        continue;
+      }
+
+      log(`[Scan] === Guild: ${guild.guild_name} — ${guildServers.length} servers, ${Object.keys(guildThresholds).length} species ===`);
+
+      // Get all available servers from Nitrado for this guild's token
+      let availableServers: any[] = [];
       try {
-        // Get save file timestamp
-        const saveInfo = await getSaveFileInfo(server.service_id, server, token);
-        const saveTimestamp = saveInfo?.modified_at
-          ? new Date(saveInfo.modified_at * 1000).toISOString()
-          : undefined;
+        availableServers = await getServerList(guildToken);
+      } catch (error) {
+        log(`[Scan] Failed to fetch servers for guild ${guild.guild_name}: ${error}`);
+        continue;
+      }
 
-        // Download save file
-        log(`[Scan] Downloading save from ${server.name}...`);
-        const saveData = await downloadSave(server.service_id, server, saveInfo, token);
-        log(`[Scan] Parsing save file (${(saveData.length / 1024 / 1024).toFixed(1)} MB)...`);
+      // Filter to only configured servers
+      const serversToScan = availableServers.filter(s =>
+        guildServers.some((gs: any) => gs.service_id === s.service_id)
+      ).map(s => ({
+        ...s,
+        name: guildServers.find((gs: any) => gs.service_id === s.service_id)?.name || s.name,
+      }));
 
-        // Parse for wild dinos
-        const wildDinos = parseArkSave(saveData);
-        log(`[Scan] Found ${wildDinos.length} wild dinos`);
+      // Further filter by targetServiceId if specified
+      const toScan = targetServiceId
+        ? serversToScan.filter(s => s.service_id === targetServiceId)
+        : serversToScan;
 
-        // Filter by thresholds and collect embeds
-        const monitoredSpeciesIds = Object.keys(speciesThresholds);
-        const serverEmbeds: any[] = [];
-        const serverResults: any[] = [];
+      for (const server of toScan) {
+        log(`[Scan] Scanning ${server.name} (${getMapDisplayName(server.map)}) for guild ${guild.guild_name}`);
+        totalServersScanned++;
 
-        for (const dino of wildDinos) {
-          const speciesId = classNameToSpeciesId(dino.className);
+        try {
+          // Get save file timestamp
+          const saveInfo = await getSaveFileInfo(server.service_id, server, guildToken);
+          const saveTimestamp = saveInfo?.modified_at
+            ? new Date(saveInfo.modified_at * 1000).toISOString()
+            : undefined;
 
-          // Check if this species is monitored
-          const threshold = speciesThresholds[speciesId];
-          if (!threshold && monitoredSpeciesIds.length > 0) continue;
+          // Download save file
+          log(`[Scan] Downloading save from ${server.name}...`);
+          const saveData = await downloadSave(server.service_id, server, saveInfo, guildToken);
+          log(`[Scan] Parsing save file (${(saveData.length / 1024 / 1024).toFixed(1)} MB)...`);
 
-          // Skip if over max level (probably not a natural wild)
-          if (dino.level > maxLevel) continue;
+          // Parse for wild dinos
+          const wildDinos = parseArkSave(saveData);
+          log(`[Scan] Found ${wildDinos.length} wild dinos`);
 
-          // ARK stat indices: 0=HP, 1=Stam, 2=Torpidity, 3=Oxygen, 4=Food, 5=Water, 6=Temp, 7=Weight, 8=Melee, 9=Speed
-          const hpPoints = dino.wildStats[0] || 0;
-          const meleePoints = dino.wildStats[8] || 0;
-          const actualHp = dino.currentStats[0] || 0;
+          // Filter by guild-specific thresholds and collect embeds
+          const monitoredSpeciesIds = Object.keys(guildThresholds);
+          const serverEmbeds: any[] = [];
+          const serverResults: any[] = [];
 
-          // Check thresholds (null means stat is disabled for this species)
-          const hpThreshold = threshold ? threshold.hp : minPoints;
-          const meleeThreshold = threshold ? threshold.melee : minPoints;
+          for (const dino of wildDinos) {
+            const speciesId = classNameToSpeciesId(dino.className);
 
-          const hpExceeds = hpThreshold !== null && hpPoints >= hpThreshold;
-          const meleeExceeds = meleeThreshold !== null && meleePoints >= meleeThreshold;
+            // Check if this species is monitored for THIS GUILD
+            const threshold = guildThresholds[speciesId];
+            if (!threshold && monitoredSpeciesIds.length > 0) continue;
 
-          if (!hpExceeds && !meleeExceeds) continue;
+            // Skip if over max level (probably not a natural wild)
+            if (dino.level > maxLevel) continue;
 
-          log(`[Scan] ALERT: ${speciesId} Lvl ${dino.level} — HP: ${hpPoints}, Melee: ${meleePoints} on ${server.name}`);
+            // ARK stat indices: 0=HP, 1=Stam, 2=Torpidity, 3=Oxygen, 4=Food, 5=Water, 6=Temp, 7=Weight, 8=Melee, 9=Speed
+            const hpPoints = dino.wildStats[0] || 0;
+            const meleePoints = dino.wildStats[8] || 0;
+            const actualHp = dino.currentStats[0] || 0;
 
-          const location = ue4ToLatLon(dino.x, dino.y, server.map);
+            // Check thresholds (null means stat is disabled for this species)
+            const hpThreshold = threshold ? threshold.hp : minPoints;
+            const meleeThreshold = threshold ? threshold.melee : minPoints;
 
-          serverEmbeds.push(buildDinoAlertEmbed({
-            species: speciesId,
-            level: dino.level,
-            hpPoints,
-            meleePoints,
-            actualHp,
-            serverName: server.name,
-            mapName: getMapDisplayName(server.map),
-            location,
-            baseUrl,
-            scannedAt: saveTimestamp,
-          }));
+            const hpExceeds = hpThreshold !== null && hpPoints >= hpThreshold;
+            const meleeExceeds = meleeThreshold !== null && meleePoints >= meleeThreshold;
 
-          serverResults.push({
-            species: speciesId,
-            level: dino.level,
-            hp_points: hpPoints,
-            melee_points: meleePoints,
-            location,
-            server_name: server.name,
-            service_id: server.service_id,
-            scanned_at: new Date().toISOString(),
-            is_female: dino.isFemale,
-            class_name: dino.className,
-          });
-        }
+            if (!hpExceeds && !meleeExceeds) continue;
 
-        // Send all embeds for this server in batches of 10 (Discord limit)
-        let alertCount = 0;
-        if (serverEmbeds.length > 0) {
-          const threads = await getOrCreateServerThreads(server.name);
-          for (const { threadId, embedColor } of threads) {
-            for (let i = 0; i < serverEmbeds.length; i += 10) {
-              const batch = serverEmbeds.slice(i, i + 10).map(e =>
-                embedColor !== undefined ? { ...e, color: embedColor } : e
-              );
-              const sent = await sendEmbedToThread(threadId, batch);
-              if (sent) alertCount += batch.length;
-              if (i + 10 < serverEmbeds.length) {
-                await new Promise(resolve => setTimeout(resolve, 300));
+            log(`[Scan] ALERT: ${speciesId} Lvl ${dino.level} — HP: ${hpPoints}, Melee: ${meleePoints} on ${server.name} for guild ${guild.guild_name}`);
+
+            const location = ue4ToLatLon(dino.x, dino.y, server.map);
+
+            serverEmbeds.push(buildDinoAlertEmbed({
+              species: speciesId,
+              level: dino.level,
+              hpPoints,
+              meleePoints,
+              actualHp,
+              serverName: server.name,
+              mapName: getMapDisplayName(server.map),
+              location,
+              baseUrl,
+              scannedAt: saveTimestamp,
+            }));
+
+            serverResults.push({
+              species: speciesId,
+              level: dino.level,
+              hp_points: hpPoints,
+              melee_points: meleePoints,
+              location,
+              server_name: server.name,
+              service_id: server.service_id,
+              scanned_at: new Date().toISOString(),
+              is_female: dino.isFemale,
+              class_name: dino.className,
+            });
+          }
+
+          // Send all embeds for this server to THIS GUILD'S forum only
+          let alertCount = 0;
+          if (serverEmbeds.length > 0) {
+            const threads = await getOrCreateServerThreads(server.name, guild.guild_id, guild.forum_channel_id);
+            for (const { threadId, embedColor } of threads) {
+              for (let i = 0; i < serverEmbeds.length; i += 10) {
+                const batch = serverEmbeds.slice(i, i + 10).map(e =>
+                  embedColor !== undefined ? { ...e, color: embedColor } : e
+                );
+                const sent = await sendEmbedToThread(threadId, batch);
+                if (sent) alertCount += batch.length;
+                if (i + 10 < serverEmbeds.length) {
+                  await new Promise(resolve => setTimeout(resolve, 300));
+                }
               }
             }
           }
+
+          allResults.push(...serverResults);
+
+          log(`[Scan] ${server.name} (${guild.guild_name}): ${alertCount} alerts sent`);
+        } catch (error) {
+          log(`[Scan] ERROR scanning ${server.name} for guild ${guild.guild_name}: ${error}`);
         }
-
-        allResults.push(...serverResults);
-
-        log(`[Scan] ${server.name}: ${alertCount} alerts sent`);
-      } catch (error) {
-        log(`[Scan] ERROR scanning ${server.name}: ${error}`);
       }
     }
 
-    log(`[Scan] Complete: ${toScan.length} servers scanned, ${allResults.length} rare dinos found`);
+    log(`[Scan] Complete: ${totalServersScanned} servers scanned, ${allResults.length} rare dinos found`);
 
     return NextResponse.json({
       success: true,
-      servers_scanned: toScan.length,
+      servers_scanned: totalServersScanned,
       results: allResults.length,
       alerts: allResults,
     });

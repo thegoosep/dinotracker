@@ -81,6 +81,8 @@ interface DiscordServer {
   forum_channel_name: string;
   embed_color?: string;
   nitrado_token?: string;
+  servers?: Array<{ service_id: string; name: string }>;
+  species_thresholds?: Record<string, { hp: number | null; melee: number | null }>;
 }
 
 async function getDiscordServers(): Promise<DiscordServer[]> {
@@ -203,8 +205,23 @@ export interface ServerThread {
 
 /**
  * Get thread IDs for a server name across all configured Discord guilds.
+ * If guildId and forumChannelId are provided, only creates thread for that specific guild+channel.
  */
-export async function getOrCreateServerThreads(serverName: string, guildId?: string): Promise<ServerThread[]> {
+export async function getOrCreateServerThreads(serverName: string, guildId?: string, forumChannelId?: string): Promise<ServerThread[]> {
+  // If specific guild and channel provided, use those directly
+  if (guildId && forumChannelId) {
+    const threadId = await findOrCreateThread(serverName, guildId, forumChannelId);
+    if (threadId) {
+      // Get embed color from guild config if available
+      const discordServers = await getDiscordServers();
+      const guild = discordServers.find(ds => ds.guild_id === guildId);
+      const color = guild?.embed_color ? parseInt(guild.embed_color.replace('#', ''), 16) : undefined;
+      return [{ threadId, embedColor: color }];
+    }
+    return [];
+  }
+
+  // Otherwise, use all configured guilds (or filter by guildId if provided)
   const discordServers = await getDiscordServers();
   const filtered = guildId ? discordServers.filter(ds => ds.guild_id === guildId) : discordServers;
   const threads: ServerThread[] = [];
