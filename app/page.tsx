@@ -910,7 +910,7 @@ interface DiscordServerConfig {
   species_thresholds?: Record<string, { hp: number | null; melee: number | null }>;
 }
 
-function SetupWizard({ onComplete }: { onComplete: () => void }) {
+function SetupWizard({ onComplete, clientId }: { onComplete: () => void; clientId: string }) {
   const [step, setStep] = useState<'guilds' | 'channel'>('guilds');
   const [guilds, setGuilds] = useState<Guild[]>([]);
   const [selectedGuild, setSelectedGuild] = useState<Guild | null>(null);
@@ -1071,6 +1071,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
 // --- Main Page ---
 
 export default function DinoTrackerPage() {
+  const clientId = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID || '';
   const { data: session, status } = useSession();
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null);
   const [showWizard, setShowWizard] = useState(false);
@@ -1236,7 +1237,7 @@ export default function DinoTrackerPage() {
 
   // Show setup wizard if no servers or explicitly requested
   if (!setupComplete || showWizard || discordServers.length === 0) {
-    return <SetupWizard onComplete={() => { setShowWizard(false); loadConfig(); }} />;
+    return <SetupWizard onComplete={() => { setShowWizard(false); loadConfig(); }} clientId={clientId} />;
   }
 
   // Safety check - don't render until we have a selectedGuildId
