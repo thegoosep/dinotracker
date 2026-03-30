@@ -30,6 +30,8 @@ const Header = styled.div`
   backdrop-filter: blur(10px);
   border-radius: ${props => props.theme.borderRadius.lg};
   border: 2px solid rgba(168, 85, 247, 0.5);
+  position: relative;
+  z-index: 100;
 `;
 
 const Title = styled.h1`
@@ -517,6 +519,135 @@ const LogoutButton = styled.button`
   }
 `;
 
+// --- Floating Account Menu ---
+
+const AccountMenuWrapper = styled.div`
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 100;
+`;
+
+const AccountAvatar = styled.img`
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 2px solid rgba(168, 85, 247, 0.5);
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: #a855f7;
+    box-shadow: 0 0 12px rgba(168, 85, 247, 0.4);
+  }
+`;
+
+const AccountAvatarPlaceholder = styled.div`
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 2px solid rgba(168, 85, 247, 0.5);
+  background: rgba(168, 85, 247, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #a855f7;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: #a855f7;
+    box-shadow: 0 0 12px rgba(168, 85, 247, 0.4);
+  }
+`;
+
+const AccountPopup = styled.div`
+  position: absolute;
+  top: 48px;
+  right: 0;
+  background: rgba(15, 15, 20, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 16px;
+  min-width: 200px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+`;
+
+const AccountName = styled.div`
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+`;
+
+const AccountLabel = styled.div`
+  color: #6b7280;
+  font-size: 0.75rem;
+  margin-bottom: 12px;
+`;
+
+const AccountLogoutBtn = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(239, 68, 68, 0.25);
+  }
+`;
+
+function AccountMenu({ session }: { session: any }) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  if (!session?.user) return null;
+
+  return (
+    <AccountMenuWrapper ref={menuRef}>
+      {session.user.image ? (
+        <AccountAvatar src={session.user.image} alt="" onClick={() => setOpen(!open)} />
+      ) : (
+        <AccountAvatarPlaceholder onClick={() => setOpen(!open)}>
+          {(session.user.name || '?').charAt(0).toUpperCase()}
+        </AccountAvatarPlaceholder>
+      )}
+      {open && (
+        <AccountPopup>
+          <AccountName>{session.user.name}</AccountName>
+          <AccountLabel>Signed in with Discord</AccountLabel>
+          <AccountLogoutBtn onClick={() => signOut()}>
+            <LogOut size={14} />
+            Sign Out
+          </AccountLogoutBtn>
+        </AccountPopup>
+      )}
+    </AccountMenuWrapper>
+  );
+}
+
 // --- Setup Wizard Styled Components ---
 
 const WizardCard = styled.div`
@@ -885,6 +1016,448 @@ const ColorPickerWrapper = styled.label`
   }
 `;
 
+// --- Purchase Page Component ---
+
+const PricingContainer = styled.div`
+  display: flex;
+  gap: 24px;
+  align-items: stretch;
+  width: 100%;
+  max-width: 780px;
+
+  @media (max-width: 768px) {
+    flex-direction: column;
+    align-items: center;
+  }
+`;
+
+const PlanCard = styled.div<{ $highlighted?: boolean }>`
+  background: ${p => p.$highlighted
+    ? 'linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(236, 72, 153, 0.15) 100%)'
+    : 'rgba(20, 20, 30, 0.8)'};
+  border: 2px solid ${p => p.$highlighted ? '#a855f7' : 'rgba(255, 255, 255, 0.08)'};
+  border-radius: 20px;
+  padding: 32px 28px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  backdrop-filter: blur(12px);
+  transition: all 0.3s ease;
+  max-width: 370px;
+
+  &:hover {
+    border-color: ${p => p.$highlighted ? '#c084fc' : 'rgba(168, 85, 247, 0.4)'};
+    transform: translateY(-4px);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  }
+`;
+
+const PlanBadge = styled.div`
+  position: absolute;
+  top: -13px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, #a855f7, #ec4899);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  padding: 5px 18px;
+  border-radius: 20px;
+  white-space: nowrap;
+`;
+
+const PlanName = styled.div`
+  color: #9ca3af;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 12px;
+`;
+
+const PlanPrice = styled.div`
+  font-size: 2.8rem;
+  font-weight: 800;
+  color: white;
+  line-height: 1;
+  margin-bottom: 4px;
+`;
+
+const PlanInterval = styled.div`
+  color: #6b7280;
+  font-size: 0.85rem;
+  margin-bottom: 4px;
+`;
+
+const PlanSavings = styled.div`
+  color: #34d399;
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-bottom: 20px;
+  min-height: 20px;
+`;
+
+const PlanDivider = styled.div`
+  width: 100%;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 4px 0 20px;
+`;
+
+const PlanFeatures = styled.ul`
+  list-style: none;
+  padding: 0;
+  margin: 0 0 28px;
+  flex: 1;
+
+  li {
+    padding: 7px 0;
+    color: #d1d5db;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+`;
+
+const FeatureCheck = styled.span<{ $accent?: boolean }>`
+  color: ${p => p.$accent ? '#a855f7' : '#6b7280'};
+  font-size: 0.9rem;
+  flex-shrink: 0;
+`;
+
+const PayPalButton = styled.button<{ $primary?: boolean }>`
+  width: 100%;
+  padding: 14px 24px;
+  background: ${p => p.$primary
+    ? 'linear-gradient(135deg, #a855f7, #7c3aed)'
+    : 'rgba(255, 255, 255, 0.06)'};
+  color: white;
+  border: ${p => p.$primary ? 'none' : '1px solid rgba(255, 255, 255, 0.1)'};
+  border-radius: 12px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: auto;
+
+  &:hover {
+    background: ${p => p.$primary
+      ? 'linear-gradient(135deg, #9333ea, #6d28d9)'
+      : 'rgba(255, 255, 255, 0.1)'};
+    transform: translateY(-1px);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+  }
+`;
+
+const ExpiredBanner = styled.div`
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 12px;
+  padding: 14px 20px;
+  color: #fca5a5;
+  font-size: 0.85rem;
+  margin-bottom: 24px;
+  text-align: center;
+  max-width: 780px;
+  width: 100%;
+`;
+
+const PurchaseWrapper = styled.div`
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+`;
+
+const PurchaseHero = styled.div`
+  text-align: center;
+  margin-bottom: 40px;
+`;
+
+const HeroTitle = styled.h1`
+  font-size: 2.4rem;
+  font-weight: 800;
+  color: white;
+  margin: 16px 0 8px;
+  letter-spacing: -0.5px;
+`;
+
+const HeroSubtitle = styled.p`
+  color: #9ca3af;
+  font-size: 1rem;
+  margin: 0;
+  max-width: 400px;
+`;
+
+const PayPalSecure = styled.div`
+  color: #6b7280;
+  font-size: 0.75rem;
+  text-align: center;
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+`;
+
+function PurchasePage({ expired, trialAvailable, onTrialStarted }: { expired?: boolean; trialAvailable?: boolean; onTrialStarted?: () => void }) {
+  const { data: session } = useSession();
+  const [loading, setLoading] = useState<string | null>(null);
+  const [error, setError] = useState('');
+
+  const handleStartTrial = async () => {
+    setLoading('trial');
+    setError('');
+    try {
+      const resp = await fetch('/api/paypal/start-trial', { method: 'POST' });
+      if (!resp.ok) {
+        const data = await resp.json();
+        setError(data.error || 'Failed to start trial.');
+        setLoading(null);
+        return;
+      }
+      onTrialStarted?.();
+    } catch {
+      setError('Connection error. Please try again.');
+      setLoading(null);
+    }
+  };
+
+  const handleSubscribe = async (plan: 'monthly' | 'quarterly') => {
+    setLoading(plan);
+    setError('');
+    try {
+      const resp = await fetch('/api/paypal/create-subscription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan }),
+      });
+      if (!resp.ok) {
+        setError('Failed to start subscription. Please try again.');
+        setLoading(null);
+        return;
+      }
+      const data = await resp.json();
+      if (data.approvalUrl) {
+        window.location.href = data.approvalUrl;
+      } else {
+        setError('No approval URL returned from PayPal.');
+        setLoading(null);
+      }
+    } catch {
+      setError('Connection error. Please try again.');
+      setLoading(null);
+    }
+  };
+
+  const features = [
+    'Track wild dinos across your server',
+    'Customize which dinos you want alerts for',
+    'Set custom stat thresholds per species',
+    'Alerts sent directly to Discord',
+  ];
+
+  return (
+    <PurchaseWrapper>
+      <GlobalStyles />
+      <AccountMenu session={session} />
+      <PurchaseHero>
+        <span style={{ fontSize: '3.2rem' }}>🦖</span>
+        <HeroTitle>Dino Tracker</HeroTitle>
+        <HeroSubtitle>Never miss a perfect tame. Get wild dino stat alerts sent directly to your Discord server.</HeroSubtitle>
+      </PurchaseHero>
+
+      {expired && (
+        <ExpiredBanner>Your subscription has ended. Resubscribe to continue monitoring your servers.</ExpiredBanner>
+      )}
+
+      <PricingContainer>
+        {/* Monthly */}
+        <PlanCard>
+          <PlanName>Monthly</PlanName>
+          <PlanPrice>$16.99</PlanPrice>
+          <PlanInterval>per month</PlanInterval>
+          <PlanSavings>&nbsp;</PlanSavings>
+          <PlanDivider />
+          <PlanFeatures>
+            {features.map((f, i) => (
+              <li key={i}><FeatureCheck>&#10003;</FeatureCheck>{f}</li>
+            ))}
+          </PlanFeatures>
+          <PayPalButton onClick={() => handleSubscribe('monthly')} disabled={loading !== null}>
+            {loading === 'monthly' ? 'Redirecting...' : 'Get Monthly'}
+          </PayPalButton>
+          <PayPalSecure>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+            Secure checkout powered by PayPal
+          </PayPalSecure>
+        </PlanCard>
+
+        {/* Quarterly */}
+        <PlanCard $highlighted>
+          <PlanBadge>Best Value</PlanBadge>
+          <PlanName>3 Months</PlanName>
+          <PlanPrice>$41.99</PlanPrice>
+          <PlanInterval>every 3 months</PlanInterval>
+          <PlanSavings>Save $9 vs monthly</PlanSavings>
+          <PlanDivider />
+          <PlanFeatures>
+            {features.map((f, i) => (
+              <li key={i}><FeatureCheck $accent>&#10003;</FeatureCheck>{f}</li>
+            ))}
+          </PlanFeatures>
+          <PayPalButton $primary onClick={() => handleSubscribe('quarterly')} disabled={loading !== null}>
+            {loading === 'quarterly' ? 'Redirecting...' : 'Get Quarterly'}
+          </PayPalButton>
+          <PayPalSecure>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+            Secure checkout powered by PayPal
+          </PayPalSecure>
+        </PlanCard>
+      </PricingContainer>
+
+      {trialAvailable && (
+        <div style={{ textAlign: 'center', marginTop: '16px' }}>
+          <button
+            onClick={handleStartTrial}
+            disabled={loading !== null}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#9ca3af',
+              fontSize: '0.9rem',
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              padding: '8px 16px',
+              transition: 'color 0.2s',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.color = '#d1d5db')}
+            onMouseLeave={e => (e.currentTarget.style.color = '#9ca3af')}
+          >
+            {loading === 'trial' ? 'Starting trial...' : 'Try free for 24 hours'}
+          </button>
+        </div>
+      )}
+
+      {error && <WizardError style={{ marginTop: 16 }}>{error}</WizardError>}
+    </PurchaseWrapper>
+  );
+}
+
+// --- Guild Selection Page Component ---
+
+function GuildSelectionPage({ onComplete }: { onComplete: () => void }) {
+  const { data: session } = useSession();
+  const [guilds, setGuilds] = useState<Guild[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchGuilds = async () => {
+      try {
+        const r = await fetch('/api/discord/guilds');
+        if (r.status === 403) {
+          setError('Session needs updated permissions. Please sign out and sign in again.');
+          return;
+        }
+        if (!r.ok) {
+          setError('Failed to load servers');
+          return;
+        }
+        const data = await r.json();
+        setGuilds(data.guilds || []);
+      } catch {
+        setError('Failed to connect to Discord');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchGuilds();
+  }, []);
+
+  const handleSelect = async (guild: Guild) => {
+    setSaving(true);
+    setError('');
+    try {
+      const resp = await fetch('/api/paypal/select-guild', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          guild_id: guild.id,
+          guild_name: guild.name,
+          forum_channel_id: '',
+        }),
+      });
+      if (!resp.ok) {
+        const data = await resp.json();
+        setError(data.error || 'Failed to save');
+        setSaving(false);
+        return;
+      }
+      onComplete();
+    } catch {
+      setError('Failed to save configuration');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <LoginContainer>
+      <GlobalStyles />
+      <AccountMenu session={session} />
+      <WizardCard>
+        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+          <span style={{ fontSize: '2.4rem' }}>🦖</span>
+        </div>
+
+        <WizardTitle>Select Your Server</WizardTitle>
+        <WizardSubtitle>Choose the Discord server to monitor</WizardSubtitle>
+        {loading || saving ? (
+          <div style={{ color: '#9ca3af', textAlign: 'center', padding: '24px 0' }}>
+            {saving ? 'Setting up...' : 'Loading your servers...'}
+          </div>
+        ) : (
+          <GuildList>
+            {guilds.map(guild => (
+              <GuildItem key={guild.id} onClick={() => handleSelect(guild)}>
+                {guild.icon ? (
+                  <GuildIcon src={`https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=80`} alt="" />
+                ) : (
+                  <GuildIconPlaceholder>{guild.name.charAt(0)}</GuildIconPlaceholder>
+                )}
+                <GuildName>{guild.name}</GuildName>
+              </GuildItem>
+            ))}
+            {guilds.length === 0 && !error && (
+              <div style={{ color: '#9ca3af', textAlign: 'center', padding: '24px 0' }}>
+                No servers found where you have manage permissions
+              </div>
+            )}
+          </GuildList>
+        )}
+
+        {error && <WizardError>{error}</WizardError>}
+      </WizardCard>
+    </LoginContainer>
+  );
+}
+
 // --- Setup Wizard Component ---
 
 interface Guild {
@@ -998,7 +1571,7 @@ function SetupWizard({ onComplete, clientId }: { onComplete: () => void; clientI
       <GlobalStyles />
       <WizardCard>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <Radar size={40} color="#a855f7" />
+          <span style={{ fontSize: '2.4rem' }}>🦖</span>
         </div>
 
         <WizardSteps>
@@ -1068,6 +1641,78 @@ function SetupWizard({ onComplete, clientId }: { onComplete: () => void; clientI
   );
 }
 
+// --- Subscription Timer Component ---
+
+function SubscriptionTimer({ expiresAt, isTrial }: { expiresAt: string | null; isTrial: boolean }) {
+  const [timeLeft, setTimeLeft] = useState('');
+
+  useEffect(() => {
+    if (!expiresAt) {
+      setTimeLeft('');
+      return;
+    }
+
+    const update = () => {
+      const now = Date.now();
+      const end = new Date(expiresAt).getTime();
+      const diff = end - now;
+
+      if (diff <= 0) {
+        setTimeLeft('Expired');
+        return;
+      }
+
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+      if (days > 0) {
+        setTimeLeft(`${days}d ${hours}h ${minutes}m`);
+      } else if (hours > 0) {
+        setTimeLeft(`${hours}h ${minutes}m ${seconds}s`);
+      } else {
+        setTimeLeft(`${minutes}m ${seconds}s`);
+      }
+    };
+
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [expiresAt]);
+
+  if (!expiresAt) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#34d399', background: 'rgba(52,211,153,0.08)', padding: '4px 10px', borderRadius: '6px' }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#34d399', display: 'inline-block' }} />
+        Active
+      </div>
+    );
+  }
+
+  if (timeLeft === 'Expired') {
+    return (
+      <div style={{ fontSize: '0.75rem', color: '#ef4444', background: 'rgba(239,68,68,0.08)', padding: '4px 10px', borderRadius: '6px' }}>
+        Expired
+      </div>
+    );
+  }
+
+  const isUrgent = new Date(expiresAt).getTime() - Date.now() < 1000 * 60 * 60; // < 1 hour
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: '6px',
+      fontSize: '0.75rem',
+      color: isUrgent ? '#f59e0b' : isTrial ? '#a78bfa' : '#34d399',
+      background: isUrgent ? 'rgba(245,158,11,0.08)' : isTrial ? 'rgba(167,139,250,0.08)' : 'rgba(52,211,153,0.08)',
+      padding: '4px 10px', borderRadius: '6px', whiteSpace: 'nowrap',
+    }}>
+      {isTrial ? 'Trial' : 'Renews'}: {timeLeft}
+    </div>
+  );
+}
+
 // --- Main Page ---
 
 export default function DinoTrackerPage() {
@@ -1082,6 +1727,32 @@ export default function DinoTrackerPage() {
   const [editChannels, setEditChannels] = useState<ForumChannel[]>([]);
   const [editLoading, setEditLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Subscription state
+  const [subStatus, setSubStatus] = useState<'loading' | 'none' | 'pending_guild' | 'active' | 'expired'>('loading');
+  const [trialAvailable, setTrialAvailable] = useState(false);
+  const [subscriptions, setSubscriptions] = useState<Array<{ paypal_subscription_id: string; status: string; guild_id: string | null; guild_name: string | null; expires_at: string | null; is_trial: boolean }>>([]);
+
+  const checkSubscription = useCallback(() => {
+    fetch('/api/paypal/subscription-status')
+      .then(r => r.json())
+      .then(data => {
+        setTrialAvailable(!!data.trialAvailable);
+        setSubscriptions(data.subscriptions || []);
+        if (!data.hasSubscription) {
+          setSubStatus('none');
+        } else if (data.pendingGuild) {
+          // A subscription exists that needs a guild selected
+          setSubStatus('pending_guild');
+        } else if (data.activeCount > 0) {
+          setSubStatus('active');
+        } else {
+          // All subs cancelled/expired
+          setSubStatus('expired');
+        }
+      })
+      .catch(() => setSubStatus('none'));
+  }, []);
 
   const loadConfig = useCallback(() => {
     fetch('/api/admin/dino-monitor')
@@ -1111,8 +1782,9 @@ export default function DinoTrackerPage() {
 
   useEffect(() => {
     if (!session) return;
+    checkSubscription();
     loadConfig();
-  }, [session, loadConfig]);
+  }, [session, checkSubscription, loadConfig]);
 
   // Ensure selectedGuildId is set when discordServers loads
   useEffect(() => {
@@ -1212,7 +1884,7 @@ export default function DinoTrackerPage() {
       <LoginContainer>
         <GlobalStyles />
         <LoginCard>
-          <Radar size={48} color="#a855f7" />
+          <span style={{ fontSize: '2.8rem' }}>🦖</span>
           <LoginTitle>Dino Tracker</LoginTitle>
           <LoginSubtitle>Sign in with Discord to access the dashboard</LoginSubtitle>
           <DiscordButton onClick={() => signIn('discord')}>
@@ -1226,7 +1898,8 @@ export default function DinoTrackerPage() {
     );
   }
 
-  if (setupComplete === null) {
+  // Subscription gates
+  if (subStatus === 'loading' || setupComplete === null) {
     return (
       <LoginContainer>
         <GlobalStyles />
@@ -1235,8 +1908,20 @@ export default function DinoTrackerPage() {
     );
   }
 
-  // Show setup wizard if no servers or explicitly requested
-  if (!setupComplete || showWizard || discordServers.length === 0) {
+  if (subStatus === 'none') {
+    return <PurchasePage trialAvailable={trialAvailable} onTrialStarted={checkSubscription} />;
+  }
+
+  if (subStatus === 'expired') {
+    return <PurchasePage expired trialAvailable={trialAvailable} onTrialStarted={checkSubscription} />;
+  }
+
+  if (subStatus === 'pending_guild') {
+    return <GuildSelectionPage onComplete={() => { checkSubscription(); loadConfig(); }} />;
+  }
+
+  // Show setup wizard if explicitly requested (e.g. adding another server)
+  if (showWizard) {
     return <SetupWizard onComplete={() => { setShowWizard(false); loadConfig(); }} clientId={clientId} />;
   }
 
@@ -1255,12 +1940,11 @@ export default function DinoTrackerPage() {
       <GlobalStyles />
       <Content>
         <Header>
-          <Radar size={40} />
+          <span style={{ fontSize: '2.4rem' }}>🦖</span>
           <Title>Dino Tracker</Title>
           <ServerDropdown ref={dropdownRef}>
             <ServerDropdownToggle onClick={() => setServerDropdownOpen(!serverDropdownOpen)}>
-              <Settings size={14} />
-              {discordServers.find(s => s.guild_id === selectedGuildId)?.guild_name || `Discord Servers (${discordServers.length})`}
+              {discordServers.find(s => s.guild_id === selectedGuildId)?.guild_name || 'Select Server'}
               <ChevronDown size={12} />
             </ServerDropdownToggle>
             {serverDropdownOpen && (
@@ -1272,28 +1956,20 @@ export default function DinoTrackerPage() {
                     cursor: 'pointer',
                     borderLeft: selectedGuildId === s.guild_id ? '2px solid #a855f7' : '2px solid transparent',
                   }} onClick={() => { setSelectedGuildId(s.guild_id); setServerDropdownOpen(false); }}>
-                    <ColorPickerWrapper title="Embed color" onClick={e => e.stopPropagation()}>
-                      <ColorSwatch $color={s.embed_color || '#a855f7'} />
-                      <input
-                        type="color"
-                        value={s.embed_color || '#a855f7'}
-                        onChange={e => updateServerColor(s.guild_id, e.target.value)}
-                      />
-                    </ColorPickerWrapper>
                     <span style={{ flex: 1 }}>{s.guild_name || s.guild_id}</span>
-                    <span style={{ color: '#6b7280', fontSize: '0.7rem' }}>#{s.forum_channel_id}</span>
-                    <ServerRemoveBtn onClick={e => { e.stopPropagation(); removeDiscordServer(s.guild_id); }} title="Remove server">
-                      <X size={14} />
-                    </ServerRemoveBtn>
                   </ServerDropdownItem>
                 ))}
-                <AddServerBtn onClick={() => { setShowWizard(true); setServerDropdownOpen(false); }}>
+                <AddServerBtn onClick={() => { setSubStatus('none'); setServerDropdownOpen(false); }}>
                   <Plus size={14} />
                   Add Server
                 </AddServerBtn>
               </ServerDropdownMenu>
             )}
           </ServerDropdown>
+          {(() => {
+            const sub = subscriptions.find(s => s.guild_id === selectedGuildId);
+            return sub ? <SubscriptionTimer expiresAt={sub.expires_at} isTrial={sub.is_trial} /> : null;
+          })()}
           <UserInfo>
             {session.user?.image && <UserAvatar src={session.user.image} alt="" />}
             <UserName>{session.user?.name}</UserName>
@@ -1754,17 +2430,7 @@ function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }
               />
             </FormGroup>
           </FormGrid>
-          <FormGroup style={{ marginTop: '12px' }}>
-            <FormLabel style={{ fontSize: '0.75rem', opacity: 0.6 }}>Discord Webhook URL (fallback)</FormLabel>
-            <FormInput
-              type="text"
-              value={config.discord_webhook_url}
-              onChange={(e) => setConfig({ ...config, discord_webhook_url: e.target.value })}
-              placeholder="https://discord.com/api/webhooks/..."
-              style={{ fontSize: '0.85rem', opacity: 0.7 }}
-            />
-          </FormGroup>
-          <FetchButton onClick={testNotification} disabled={testingNotify} style={{ marginTop: '8px' }}>
+<FetchButton onClick={testNotification} disabled={testingNotify} style={{ marginTop: '8px' }}>
             {testingNotify ? 'Sending...' : 'Test Notification'}
           </FetchButton>
         </MonitorCard>
@@ -1789,12 +2455,18 @@ function DinoMonitorPanel({ discordServers, setDiscordServers, selectedGuildId }
             </div>
             <FormGroup style={{ marginBottom: '12px' }}>
               <FormLabel>Forum Channel ID</FormLabel>
-              <FormInput
-                type="text"
-                value={guild.forum_channel_id || ''}
-                onChange={(e) => updateGuildForumChannel(guild.guild_id, e.target.value)}
-                placeholder="Paste Discord forum channel ID (e.g., 1234567890123456789)"
-              />
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <FormInput
+                  type="text"
+                  value={guild.forum_channel_id || ''}
+                  onChange={(e) => updateGuildForumChannel(guild.guild_id, e.target.value)}
+                  placeholder="Paste Discord forum channel ID (e.g., 1234567890123456789)"
+                  style={{ flex: 1 }}
+                />
+                <FetchButton onClick={() => saveConfig()} disabled={saving} style={{ whiteSpace: 'nowrap' }}>
+                  {saving ? 'Saving...' : 'Save'}
+                </FetchButton>
+              </div>
               <small style={{ color: '#6b7280', fontSize: '0.75rem', marginTop: '4px', display: 'block' }}>
                 Right-click channel in Discord → Copy Channel ID
               </small>

@@ -8,6 +8,7 @@ import { getServerList, getSaveFileInfo, downloadSave } from './nitrado';
 import { parseArkSave, ue4ToLatLon, classNameToSpeciesId } from './arkParser';
 import { buildDinoAlertEmbed, getOrCreateServerThreads, sendEmbedToThread, getMapDisplayName } from './discord';
 import { loadLocalConfig } from './localConfig';
+import { getActiveSubscriptions } from './subscriptions';
 
 interface MonitorState {
   running: boolean;
@@ -151,6 +152,26 @@ async function checkAndScan() {
 
     if (discordServers.length === 0) { log('No guilds configured'); return; }
 
+    // Filter to only guilds with active subscriptions
+    let activeGuildIds: Set<string>;
+    try {
+      const activeSubs = await getActiveSubscriptions();
+      activeGuildIds = new Set(activeSubs.map(s => s.guild_id).filter(Boolean));
+    } catch (err) {
+      log(`Failed to check subscriptions: ${err}`);
+      activeGuildIds = new Set();
+    }
+
+    const subscribedServers = discordServers.filter((ds: any) => {
+      if (!activeGuildIds.has(ds.guild_id)) {
+        log(`Skipping ${ds.guild_name}: no active subscription`);
+        return false;
+      }
+      return true;
+    });
+
+    if (subscribedServers.length === 0) { log('No guilds with active subscriptions'); return; }
+
     const baseUrl = process.env.NEXTAUTH_URL || `https://${process.env.VERCEL_URL}` || 'http://localhost:3001';
     const now = Date.now();
     const forceFullScan = (now - state.lastFullScan) >= FULL_SCAN_INTERVAL_MS;
@@ -159,7 +180,7 @@ async function checkAndScan() {
     let totalAlerts = 0;
 
     // Process each guild independently
-    for (const guild of discordServers) {
+    for (const guild of subscribedServers) {
       const guildToken = guild.nitrado_token;
       const guildServers = guild.servers || [];
       const guildThresholds = guild.species_thresholds || {};
