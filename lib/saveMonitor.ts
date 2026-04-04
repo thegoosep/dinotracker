@@ -152,25 +152,8 @@ async function checkAndScan() {
 
     if (discordServers.length === 0) { log('No guilds configured'); return; }
 
-    // Filter to only guilds with active subscriptions
-    let activeGuildIds: Set<string>;
-    try {
-      const activeSubs = await getActiveSubscriptions();
-      activeGuildIds = new Set(activeSubs.map(s => s.guild_id).filter(Boolean));
-    } catch (err) {
-      log(`Failed to check subscriptions: ${err}`);
-      activeGuildIds = new Set();
-    }
-
-    const subscribedServers = discordServers.filter((ds: any) => {
-      if (!activeGuildIds.has(ds.guild_id)) {
-        log(`Skipping ${ds.guild_name}: no active subscription`);
-        return false;
-      }
-      return true;
-    });
-
-    if (subscribedServers.length === 0) { log('No guilds with active subscriptions'); return; }
+    // PayPal disabled — skip subscription filtering, allow all guilds
+    const subscribedServers = discordServers;
 
     const baseUrl = process.env.NEXTAUTH_URL || `https://${process.env.VERCEL_URL}` || 'http://localhost:3001';
     const now = Date.now();

@@ -11,11 +11,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
-  const { plan } = await request.json().catch(() => ({ plan: 'monthly' }));
-
-  const planId = plan === 'quarterly'
-    ? process.env.PAYPAL_PLAN_QUARTERLY
-    : process.env.PAYPAL_PLAN_MONTHLY;
+  const planId = process.env.PAYPAL_PLAN_MONTHLY;
 
   if (!planId) {
     return NextResponse.json({ error: 'PayPal plan not configured' }, { status: 500 });

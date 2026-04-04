@@ -23,10 +23,10 @@ export async function GET() {
 
   const guilds = await guildsResp.json();
 
-  // Filter to guilds where user has MANAGE_GUILD permission (0x20) or is owner
+  // Filter to guilds where user has ADMINISTRATOR permission (0x8) or is owner
   const manageableGuilds = guilds.filter((g: any) => {
     const perms = BigInt(g.permissions);
-    return (perms & BigInt(0x20)) !== BigInt(0) || g.owner;
+    return (perms & BigInt(0x8)) !== BigInt(0) || g.owner;
   });
 
   const results = manageableGuilds.map((guild: any) => ({

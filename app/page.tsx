@@ -1287,42 +1287,19 @@ function PurchasePage({ expired, trialAvailable, onTrialStarted }: { expired?: b
       )}
 
       <PricingContainer>
-        {/* Monthly */}
-        <PlanCard>
+        <PlanCard $highlighted>
           <PlanName>Monthly</PlanName>
-          <PlanPrice>$16.99</PlanPrice>
+          <PlanPrice>$12.99</PlanPrice>
           <PlanInterval>per month</PlanInterval>
           <PlanSavings>&nbsp;</PlanSavings>
-          <PlanDivider />
-          <PlanFeatures>
-            {features.map((f, i) => (
-              <li key={i}><FeatureCheck>&#10003;</FeatureCheck>{f}</li>
-            ))}
-          </PlanFeatures>
-          <PayPalButton onClick={() => handleSubscribe('monthly')} disabled={loading !== null}>
-            {loading === 'monthly' ? 'Redirecting...' : 'Get Monthly'}
-          </PayPalButton>
-          <PayPalSecure>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-            Secure checkout powered by PayPal
-          </PayPalSecure>
-        </PlanCard>
-
-        {/* Quarterly */}
-        <PlanCard $highlighted>
-          <PlanBadge>Best Value</PlanBadge>
-          <PlanName>3 Months</PlanName>
-          <PlanPrice>$41.99</PlanPrice>
-          <PlanInterval>every 3 months</PlanInterval>
-          <PlanSavings>Save $9 vs monthly</PlanSavings>
           <PlanDivider />
           <PlanFeatures>
             {features.map((f, i) => (
               <li key={i}><FeatureCheck $accent>&#10003;</FeatureCheck>{f}</li>
             ))}
           </PlanFeatures>
-          <PayPalButton $primary onClick={() => handleSubscribe('quarterly')} disabled={loading !== null}>
-            {loading === 'quarterly' ? 'Redirecting...' : 'Get Quarterly'}
+          <PayPalButton $primary onClick={() => handleSubscribe('monthly')} disabled={loading !== null}>
+            {loading === 'monthly' ? 'Redirecting...' : 'Subscribe Now'}
           </PayPalButton>
           <PayPalSecure>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
@@ -1734,24 +1711,8 @@ export default function DinoTrackerPage() {
   const [subscriptions, setSubscriptions] = useState<Array<{ paypal_subscription_id: string; status: string; guild_id: string | null; guild_name: string | null; expires_at: string | null; is_trial: boolean }>>([]);
 
   const checkSubscription = useCallback(() => {
-    fetch('/api/paypal/subscription-status')
-      .then(r => r.json())
-      .then(data => {
-        setTrialAvailable(!!data.trialAvailable);
-        setSubscriptions(data.subscriptions || []);
-        if (!data.hasSubscription) {
-          setSubStatus('none');
-        } else if (data.pendingGuild) {
-          // A subscription exists that needs a guild selected
-          setSubStatus('pending_guild');
-        } else if (data.activeCount > 0) {
-          setSubStatus('active');
-        } else {
-          // All subs cancelled/expired
-          setSubStatus('expired');
-        }
-      })
-      .catch(() => setSubStatus('none'));
+    // PayPal disabled — skip subscription check, grant access directly
+    setSubStatus('active');
   }, []);
 
   const loadConfig = useCallback(() => {
